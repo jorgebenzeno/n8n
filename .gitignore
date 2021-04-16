@@ -13,3 +13,5 @@ _START_PACKAGE
 .vscode
 .idea
 .prettierrc.js
+
+docker/compose/360sc/.data/.n8n/
