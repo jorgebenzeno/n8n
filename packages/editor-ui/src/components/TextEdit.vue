@@ -1,73 +1,76 @@
 <template>
 	<div v-if="dialogVisible">
-		<el-dialog :visible="dialogVisible" append-to-body width="80%" :title="`Edit ${parameter.displayName}`" :before-close="closeDialog">
-
-			<div class="text-editor-wrapper ignore-key-press">
-				<div class="editor-description">
-					{{parameter.displayName}}:
-				</div>
-				<div class="text-editor" @keydown.stop @keydown.esc="closeDialog()">
-					<el-input v-model="tempValue" type="textarea" ref="inputField" :value="value" :placeholder="parameter.placeholder" @change="valueChanged" @keydown.stop="noOp" rows="15" />
-				</div>
+		<el-dialog
+			:modelValue="dialogVisible"
+			append-to-body
+			width="80%"
+			:title="`${$locale.baseText('textEdit.edit')} ${$locale
+				.nodeText()
+				.inputLabelDisplayName(parameter, path)}`"
+			:before-close="closeDialog"
+		>
+			<div class="ignore-key-press">
+				<n8n-input-label :label="$locale.nodeText().inputLabelDisplayName(parameter, path)">
+					<div @keydown.stop @keydown.esc="onKeyDownEsc()">
+						<n8n-input
+							v-model="tempValue"
+							type="textarea"
+							ref="inputField"
+							:placeholder="$locale.nodeText().placeholder(parameter, path)"
+							:readOnly="isReadOnly"
+							:rows="15"
+							@update:modelValue="valueChanged"
+						/>
+					</div>
+				</n8n-input-label>
 			</div>
-
 		</el-dialog>
 	</div>
 </template>
 
 <script lang="ts">
-import Vue from 'vue';
+import { nextTick, defineComponent } from 'vue';
 
-import {
-	Workflow,
-} from 'n8n-workflow';
-
-export default Vue.extend({
-
+export default defineComponent({
 	name: 'TextEdit',
-	props: [
-		'dialogVisible',
-		'parameter',
-		'value',
-	],
-	data () {
+	props: ['dialogVisible', 'parameter', 'path', 'modelValue', 'isReadOnly'],
+	data() {
 		return {
 			tempValue: '', // el-input does not seem to work without v-model so add one
 		};
 	},
 	methods: {
-		valueChanged (value: string) {
-			this.$emit('valueChanged', value);
+		valueChanged(value: string) {
+			this.$emit('update:modelValue', value);
 		},
 
-		closeDialog () {
+		onKeyDownEsc() {
+			// Resetting input value when closing the dialog, required when closing it using the `Esc` key
+			this.tempValue = this.modelValue;
+
+			this.closeDialog();
+		},
+
+		closeDialog() {
 			// Handle the close externally as the visible parameter is an external prop
 			// and is so not allowed to be changed here.
 			this.$emit('closeDialog');
 			return false;
 		},
 	},
-	mounted () {
-		this.tempValue = this.value as string;
+	mounted() {
+		this.tempValue = this.modelValue as string;
 	},
 	watch: {
-		dialogVisible () {
+		async dialogVisible() {
 			if (this.dialogVisible === true) {
-				Vue.nextTick(() => {
-					(this.$refs.inputField as HTMLInputElement).focus();
-				});
+				await nextTick();
+				(this.$refs.inputField as HTMLInputElement).focus();
 			}
 		},
-		value () {
-			this.tempValue = this.value as string;
+		modelValue(value: string) {
+			this.tempValue = value;
 		},
 	},
 });
 </script>
-
-<style scoped>
-.editor-description {
-	font-weight: bold;
-	padding: 0 0 0.5em 0.2em;;
-}
-</style>

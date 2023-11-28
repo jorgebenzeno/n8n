@@ -1,39 +1,65 @@
-import {
-	ICredentialType,
-	NodePropertyTypes,
-} from 'n8n-workflow';
-
+import type { ICredentialType, INodeProperties } from 'n8n-workflow';
 
 export class OAuth2Api implements ICredentialType {
 	name = 'oAuth2Api';
+
 	displayName = 'OAuth2 API';
+
 	documentationUrl = 'httpRequest';
-	properties = [
+
+	genericAuth = true;
+
+	properties: INodeProperties[] = [
+		{
+			displayName: 'Grant Type',
+			name: 'grantType',
+			type: 'options',
+			options: [
+				{
+					name: 'Authorization Code',
+					value: 'authorizationCode',
+				},
+				{
+					name: 'Client Credentials',
+					value: 'clientCredentials',
+				},
+				{
+					name: 'PKCE',
+					value: 'pkce',
+				},
+			],
+			default: 'authorizationCode',
+		},
 		{
 			displayName: 'Authorization URL',
 			name: 'authUrl',
-			type: 'string' as NodePropertyTypes,
+			type: 'string',
+			displayOptions: {
+				show: {
+					grantType: ['authorizationCode', 'pkce'],
+				},
+			},
 			default: '',
 			required: true,
 		},
 		{
 			displayName: 'Access Token URL',
 			name: 'accessTokenUrl',
-			type: 'string' as NodePropertyTypes,
+			type: 'string',
 			default: '',
 			required: true,
 		},
 		{
 			displayName: 'Client ID',
 			name: 'clientId',
-			type: 'string' as NodePropertyTypes,
+			type: 'string',
 			default: '',
 			required: true,
 		},
 		{
 			displayName: 'Client Secret',
 			name: 'clientSecret',
-			type: 'string' as NodePropertyTypes,
+			type: 'string',
 			typeOptions: {
 				password: true,
 			},
@@ -43,21 +69,27 @@ export class OAuth2Api implements ICredentialType {
 		{
 			displayName: 'Scope',
 			name: 'scope',
-			type: 'string' as NodePropertyTypes,
+			type: 'string',
 			default: '',
 		},
 		{
 			displayName: 'Auth URI Query Parameters',
 			name: 'authQueryParameters',
-			type: 'string' as NodePropertyTypes,
+			type: 'string',
+			displayOptions: {
+				show: {
+					grantType: ['authorizationCode', 'pkce'],
+				},
+			},
 			default: '',
-			description: 'For some services additional query parameters have to be set which can be defined here.',
+			description:
+				'For some services additional query parameters have to be set which can be defined here',
 			placeholder: 'access_type=offline',
 		},
 		{
 			displayName: 'Authentication',
 			name: 'authentication',
-			type: 'options' as NodePropertyTypes,
+			type: 'options',
 			options: [
 				{
 					name: 'Body',
@@ -71,7 +103,13 @@ export class OAuth2Api implements ICredentialType {
 				},
 			],
 			default: 'header',
-			description: 'Resource to consume.',
+		},
+		{
+			displayName: 'Ignore SSL Issues',
+			name: 'ignoreSSLIssues',
+			type: 'boolean',
+			default: false,
+			doNotInherit: true,
 		},
 	];
 }

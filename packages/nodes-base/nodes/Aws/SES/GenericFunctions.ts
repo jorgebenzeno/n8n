@@ -1,99 +1,98 @@
-import {
-	URL,
-} from 'url';
+import { parseString } from 'xml2js';
 
-import {
-	sign,
-} from 'aws4';
-
-import {
-	OptionsWithUri,
-} from 'request';
-
-import {
-	parseString,
-} from 'xml2js';
-
-import {
+import type {
+	IDataObject,
 	IExecuteFunctions,
 	IHookFunctions,
 	ILoadOptionsFunctions,
 	IWebhookFunctions,
-} from 'n8n-core';
-
-import {
-	IDataObject,
+	IHttpRequestOptions,
+	JsonObject,
 } from 'n8n-workflow';
+import { NodeApiError } from 'n8n-workflow';
 
-import {
-	get,
-} from 'lodash';
+import get from 'lodash/get';
 
-export async function awsApiRequest(this: IHookFunctions | IExecuteFunctions | ILoadOptionsFunctions | IWebhookFunctions, service: string, method: string, path: string, body?: string, headers?: object): Promise<any> { // tslint:disable-line:no-any
-	const credentials = this.getCredentials('aws');
-	if (credentials === undefined) {
-		throw new Error('No credentials got returned!');
-	}
+export async function awsApiRequest(
+	this: IHookFunctions | IExecuteFunctions | ILoadOptionsFunctions | IWebhookFunctions,
+	service: string,
+	method: string,
+	path: string,
+	body?: string,
+	headers?: object,
+): Promise<any> {
+	const credentials = await this.getCredentials('aws');
 
-	const endpoint = new URL(((credentials.sesEndpoint as string || '').replace('{region}', credentials.region as string) || `https://${service}.${credentials.region}.amazonaws.com`) + path);
-
-	// Sign AWS API request with the user credentials
-
-	const signOpts = { headers: headers || {}, host: endpoint.host, method, path, body };
-	sign(signOpts, { accessKeyId: `${credentials.accessKeyId}`.trim(), secretAccessKey: `${credentials.secretAccessKey}`.trim() });
-
-	const options: OptionsWithUri = {
-		headers: signOpts.headers,
+	const requestOptions = {
+		qs: {
+			service,
+			path,
+		},
 		method,
-		uri: endpoint.href,
-		body: signOpts.body as string,
-	};
+		body: JSON.stringify(body),
+		url: '',
+		headers,
+		region: credentials?.region as string,
+	} as IHttpRequestOptions;
 
 	try {
-		return await this.helpers.request!(options);
+		return await this.helpers.requestWithAuthentication.call(this, 'aws', requestOptions);
 	} catch (error) {
-		const errorMessage = (error.response && error.response.body.message) || (error.response && error.response.body.Message) || error.message;
-
-		if (error.statusCode === 403) {
-			if (errorMessage === 'The security token included in the request is invalid.') {
-				throw new Error('The AWS credentials are not valid!');
-			} else if (errorMessage.startsWith('The request signature we calculated does not match the signature you provided')) {
-				throw new Error('The AWS credentials are not valid!');
-			}
-		}
-
-		throw new Error(`AWS error response [${error.statusCode}]: ${errorMessage}`);
+		throw new NodeApiError(this.getNode(), error as JsonObject, { parseXml: true });
 	}
 }
 
-export async function awsApiRequestREST(this: IHookFunctions | IExecuteFunctions | ILoadOptionsFunctions, service: string, method: string, path: string, body?: string, headers?: object): Promise<any> { // tslint:disable-line:no-any
+export async function awsApiRequestREST(
+	this: IHookFunctions | IExecuteFunctions | ILoadOptionsFunctions,
+	service: string,
+	method: string,
+	path: string,
+	body?: string,
+	headers?: object,
+): Promise<any> {
 	const response = await awsApiRequest.call(this, service, method, path, body, headers);
 	try {
-		return JSON.parse(response);
-	} catch (e) {
+		return JSON.parse(response as string);
+	} catch (error) {
 		return response;
 	}
 }
 
-export async function awsApiRequestSOAP(this: IHookFunctions | IExecuteFunctions | ILoadOptionsFunctions | IWebhookFunctions, service: string, method: string, path: string, body?: string, headers?: object): Promise<any> { // tslint:disable-line:no-any
+export async function awsApiRequestSOAP(
+	this: IHookFunctions | IExecuteFunctions | ILoadOptionsFunctions | IWebhookFunctions,
+	service: string,
+	method: string,
+	path: string,
+	body?: string,
+	headers?: object,
+): Promise<any> {
 	const response = await awsApiRequest.call(this, service, method, path, body, headers);
 	try {
 		return await new Promise((resolve, reject) => {
-			parseString(response, { explicitArray: false }, (err, data) => {
+			parseString(response as string, { explicitArray: false }, (err, data) => {
 				if (err) {
 					return reject(err);
 				}
 				resolve(data);
 			});
 		});
-	} catch (e) {
+	} catch (error) {
 		return response;
 	}
 }
 
-
-export async function awsApiRequestSOAPAllItems(this: IHookFunctions | IExecuteFunctions | ILoadOptionsFunctions | IWebhookFunctions, propertyName: string, service: string, method: string, path: string, body?: string, query: IDataObject = {}, headers: IDataObject = {},  option: IDataObject = {}, region?: string): Promise<any> { // tslint:disable-line:no-any
-
+export async function awsApiRequestSOAPAllItems(
+	this: IHookFunctions | IExecuteFunctions | ILoadOptionsFunctions | IWebhookFunctions,
+	propertyName: string,
+	service: string,
+	method: string,
+	path: string,
+	body?: string,
+	query: IDataObject = {},
+	_headers: IDataObject = {},
+	_option: IDataObject = {},
+	_region?: string,
+): Promise<any> {
 	const returnData: IDataObject[] = [];
 
 	let responseData;
@@ -104,13 +103,16 @@ export async function awsApiRequestSOAPAllItems(this: IHookFunctions | IExecuteF
 		responseData = await awsApiRequestSOAP.call(this, service, method, path, body, query);
 
 		if (get(responseData, `${propertyNameArray[0]}.${propertyNameArray[1]}.NextToken`)) {
-			query['NextToken'] = get(responseData, `${propertyNameArray[0]}.${propertyNameArray[1]}.NextToken`);
+			query.NextToken = get(
+				responseData,
+				`${propertyNameArray[0]}.${propertyNameArray[1]}.NextToken`,
+			);
 		}
 		if (get(responseData, propertyName)) {
 			if (Array.isArray(get(responseData, propertyName))) {
-				returnData.push.apply(returnData, get(responseData, propertyName));
+				returnData.push.apply(returnData, get(responseData, propertyName) as IDataObject[]);
 			} else {
-				returnData.push(get(responseData, propertyName));
+				returnData.push(get(responseData, propertyName) as IDataObject);
 			}
 		}
 	} while (

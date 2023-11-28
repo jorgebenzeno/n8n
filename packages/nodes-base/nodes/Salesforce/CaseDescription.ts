@@ -1,15 +1,14 @@
-import { INodeProperties } from 'n8n-workflow';
+import type { INodeProperties } from 'n8n-workflow';
 
-export const caseOperations = [
+export const caseOperations: INodeProperties[] = [
 	{
 		displayName: 'Operation',
 		name: 'operation',
 		type: 'options',
+		noDataExpression: true,
 		displayOptions: {
 			show: {
-				resource: [
-					'case',
-				],
+				resource: ['case'],
 			},
 		},
 		options: [
@@ -17,50 +16,55 @@ export const caseOperations = [
 				name: 'Add Comment',
 				value: 'addComment',
 				description: 'Add a comment to a case',
+				action: 'Add a comment to a case',
 			},
 			{
 				name: 'Create',
 				value: 'create',
 				description: 'Create a case',
-			},
-			{
-				name: 'Get',
-				value: 'get',
-				description: 'Get a case',
-			},
-			{
-				name: 'Get All',
-				value: 'getAll',
-				description: 'Get all cases',
-			},
-			{
-				name: 'Get Summary',
-				value: 'getSummary',
-				description: `Returns an overview of case's metadata`,
+				action: 'Create a case',
 			},
 			{
 				name: 'Delete',
 				value: 'delete',
 				description: 'Delete a case',
+				action: 'Delete a case',
+			},
+			{
+				name: 'Get',
+				value: 'get',
+				description: 'Get a case',
+				action: 'Get a case',
+			},
+			{
+				name: 'Get Many',
+				value: 'getAll',
+				description: 'Get many cases',
+				action: 'Get many cases',
+			},
+			{
+				name: 'Get Summary',
+				value: 'getSummary',
+				description: "Returns an overview of case's metadata",
+				action: 'Get a case summary',
 			},
 			{
 				name: 'Update',
 				value: 'update',
 				description: 'Update a case',
+				action: 'Update a case',
 			},
 		],
 		default: 'create',
-		description: 'The operation to perform.',
 	},
-] as INodeProperties[];
+];
 
-export const caseFields = [
-
+export const caseFields: INodeProperties[] = [
 	/* -------------------------------------------------------------------------- */
 	/*                                case:create                                 */
 	/* -------------------------------------------------------------------------- */
 	{
-		displayName: 'Type',
+		displayName: 'Type Name or ID',
 		name: 'type',
 		type: 'options',
 		required: true,
@@ -69,16 +73,13 @@ export const caseFields = [
 		},
 		displayOptions: {
 			show: {
-				resource: [
-					'case',
-				],
-				operation: [
-					'create',
-				],
+				resource: ['case'],
+				operation: ['create'],
 			},
 		},
 		default: '',
-		description: 'The type of case',
+		description:
+			'The type of case. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code-examples/expressions/">expression</a>.',
 	},
 	{
 		displayName: 'Additional Fields',
@@ -88,12 +89,8 @@ export const caseFields = [
 		default: {},
 		displayOptions: {
 			show: {
-				resource: [
-					'case',
-				],
-				operation: [
-					'create',
-				],
+				resource: ['case'],
+				operation: ['create'],
 			},
 		},
 		options: [
@@ -102,14 +99,51 @@ export const caseFields = [
 				name: 'accountId',
 				type: 'string',
 				default: '',
-				description: 'ID of the account associated with this case.',
+				description: 'ID of the account associated with this case',
 			},
 			{
 				displayName: 'Contact ID',
 				name: 'contactId',
 				type: 'string',
 				default: '',
-				description: 'ID of the associated Contact.',
+				description: 'ID of the associated Contact',
+			},
+			{
+				displayName: 'Custom Fields',
+				name: 'customFieldsUi',
+				placeholder: 'Add Custom Field',
+				type: 'fixedCollection',
+				typeOptions: {
+					multipleValues: true,
+				},
+				description: 'Filter by custom fields',
+				default: {},
+				options: [
+					{
+						name: 'customFieldsValues',
+						displayName: 'Custom Field',
+						values: [
+							{
+								displayName: 'Field Name or ID',
+								name: 'fieldId',
+								type: 'options',
+								typeOptions: {
+									loadOptionsMethod: 'getCustomFields',
+								},
+								default: '',
+								description:
+									'The ID of the field to add custom field to. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code-examples/expressions/">expression</a>.',
+							},
+							{
+								displayName: 'Value',
+								name: 'value',
+								type: 'string',
+								default: '',
+								description: 'The value to set on custom field',
+							},
+						],
+					},
+				],
 			},
 			{
 				displayName: 'Description',
@@ -123,27 +157,29 @@ export const caseFields = [
 				name: 'isEscalated',
 				type: 'boolean',
 				default: false,
-				description: 'Indicates whether the case has been escalated (true) or not.',
+				description: 'Whether indicates whether the case has been escalated (true) or not',
 			},
 			{
-				displayName: 'Origin',
+				displayName: 'Origin Name or ID',
 				name: 'origin',
 				type: 'options',
 				typeOptions: {
 					loadOptionsMethod: 'getCaseOrigins',
 				},
 				default: '',
-				description: 'The source of the case, such as Email, Phone, or Web. Label is Case Origin.',
+				description:
+					'The source of the case, such as Email, Phone, or Web. Label is Case Origin. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code-examples/expressions/">expression</a>.',
 			},
 			{
-				displayName: 'Owner',
+				displayName: 'Owner Name or ID',
 				name: 'owner',
 				type: 'options',
 				typeOptions: {
-					loadOptionsMethod: 'getUsers',
+					loadOptionsMethod: 'getCaseOwners',
 				},
 				default: '',
-				description: 'The owner of the case.',
+				description:
+					'The owner of the case. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code-examples/expressions/">expression</a>.',
 			},
 			{
 				displayName: 'Parent ID',
@@ -153,34 +189,48 @@ export const caseFields = [
 				description: 'The ID of the parent case in the hierarchy. The label is Parent Case.',
 			},
 			{
-				displayName: 'Priority',
+				displayName: 'Priority Name or ID',
 				name: 'priority',
 				type: 'options',
 				typeOptions: {
 					loadOptionsMethod: 'getCasePriorities',
 				},
 				default: '',
-				description: 'The importance or urgency of the case, such as High, Medium, or Low.',
+				description:
+					'The importance or urgency of the case, such as High, Medium, or Low. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code-examples/expressions/">expression</a>.',
 			},
 			{
-				displayName: 'Reason',
+				displayName: 'Reason Name or ID',
 				name: 'reason',
 				type: 'options',
 				typeOptions: {
 					loadOptionsMethod: 'getCaseReasons',
 				},
 				default: '',
-				description: 'The reason why the case was created, such as Instructions not clear, or User didn’t attend training.',
+				description:
+					'The reason why the case was created, such as Instructions not clear, or User didn’t attend training. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code-examples/expressions/">expression</a>.',
 			},
 			{
-				displayName: 'Status',
+				displayName: 'Record Type Name or ID',
+				name: 'recordTypeId',
+				type: 'options',
+				description:
+					'Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code-examples/expressions/">expression</a>',
+				typeOptions: {
+					loadOptionsMethod: 'getRecordTypes',
+				},
+				default: '',
+			},
+			{
+				displayName: 'Status Name or ID',
 				name: 'status',
 				type: 'options',
 				typeOptions: {
 					loadOptionsMethod: 'getCaseStatuses',
 				},
 				default: '',
-				description: 'The status of the case, such as “New,” “Closed,” or “Escalated.” This field directly controls the IsClosed flag',
+				description:
+					'The status of the case, such as “New,” “Closed,” or “Escalated.” This field directly controls the IsClosed flag. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code-examples/expressions/">expression</a>.',
 			},
 			{
 				displayName: 'Subject',
@@ -194,28 +244,32 @@ export const caseFields = [
 				name: 'suppliedCompany',
 				type: 'string',
 				default: '',
-				description: `The company name that was entered when the case was created. This field can't be updated after the case has been created..`,
+				description:
+					"The company name that was entered when the case was created. This field can't be updated after the case has been created..",
 			},
 			{
 				displayName: 'Supplied Email',
 				name: 'suppliedEmail',
 				type: 'string',
 				default: '',
-				description: `The email address that was entered when the case was created. This field can't be updated after the case has been created.`,
+				description:
+					"The email address that was entered when the case was created. This field can't be updated after the case has been created.",
 			},
 			{
 				displayName: 'Supplied Name',
 				name: 'suppliedName',
 				type: 'string',
 				default: '',
-				description: `The name that was entered when the case was created. This field can't be updated after the case has been created`,
+				description:
+					"The name that was entered when the case was created. This field can't be updated after the case has been created.",
 			},
 			{
 				displayName: 'Supplied Phone',
 				name: 'suppliedPhone',
 				type: 'string',
 				default: '',
-				description: `The phone number that was entered when the case was created. This field can't be updated after the case has been created.`,
+				description:
+					"The phone number that was entered when the case was created. This field can't be updated after the case has been created.",
 			},
 		],
 	},
@@ -231,15 +285,11 @@ export const caseFields = [
 		default: '',
 		displayOptions: {
 			show: {
-				resource: [
-					'case',
-				],
-				operation: [
-					'update',
-				],
+				resource: ['case'],
+				operation: ['update'],
 			},
 		},
-		description: 'Id of case that needs to be fetched',
+		description: 'ID of case that needs to be fetched',
 	},
 	{
 		displayName: 'Update Fields',
@@ -249,102 +299,61 @@ export const caseFields = [
 		default: {},
 		displayOptions: {
 			show: {
-				resource: [
-					'case',
-				],
-				operation: [
-					'update',
-				],
+				resource: ['case'],
+				operation: ['update'],
 			},
 		},
 		options: [
-			{
-				displayName: 'Type',
-				name: 'type',
-				type: 'options',
-				typeOptions: {
-					loadOptionsMethod: 'getCaseTypes',
-				},
-				default: '',
-				description: 'The type of case',
-			},
-			{
-				displayName: 'Origin',
-				name: 'origin',
-				type: 'options',
-				typeOptions: {
-					loadOptionsMethod: 'getCaseOrigins',
-				},
-				default: '',
-				description: 'The source of the case, such as Email, Phone, or Web. Label is Case Origin.',
-			},
-			{
-				displayName: 'Reason',
-				name: 'reason',
-				type: 'options',
-				typeOptions: {
-					loadOptionsMethod: 'getCaseReasons',
-				},
-				default: '',
-				description: 'The reason why the case was created, such as Instructions not clear, or User didn’t attend training.',
-			},
-			{
-				displayName: 'Status',
-				name: 'status',
-				type: 'options',
-				typeOptions: {
-					loadOptionsMethod: 'getCaseStatuses',
-				},
-				default: '',
-				description: 'The status of the case, such as “New,” “Closed,” or “Escalated.” This field directly controls the IsClosed flag',
-			},
-			{
-				displayName: 'Owner',
-				name: 'owner',
-				type: 'options',
-				typeOptions: {
-					loadOptionsMethod: 'getUsers',
-				},
-				default: '',
-				description: 'The owner of the case.',
-			},
-			{
-				displayName: 'Subject',
-				name: 'subject',
-				type: 'string',
-				default: '',
-				description: 'The subject of the case. Limit: 255 characters.',
-			},
-			{
-				displayName: 'Parent ID',
-				name: 'ParentId',
-				type: 'string',
-				default: '',
-				description: 'The ID of the parent case in the hierarchy. The label is Parent Case.',
-			},
-			{
-				displayName: 'Priority',
-				name: 'priority',
-				type: 'options',
-				typeOptions: {
-					loadOptionsMethod: 'getCasePriorities',
-				},
-				default: '',
-				description: 'The importance or urgency of the case, such as High, Medium, or Low.',
-			},
 			{
 				displayName: 'Account ID',
 				name: 'accountId',
 				type: 'string',
 				default: '',
-				description: 'ID of the account associated with this case.',
+				description: 'ID of the account associated with this case',
 			},
 			{
 				displayName: 'Contact ID',
 				name: 'contactId',
 				type: 'string',
 				default: '',
-				description: 'ID of the associated Contact.',
+				description: 'ID of the associated Contact',
+			},
+			{
+				displayName: 'Custom Fields',
+				name: 'customFieldsUi',
+				placeholder: 'Add Custom Field',
+				type: 'fixedCollection',
+				typeOptions: {
+					multipleValues: true,
+				},
+				description: 'Filter by custom fields',
+				default: {},
+				options: [
+					{
+						name: 'customFieldsValues',
+						displayName: 'Custom Field',
+						values: [
+							{
+								displayName: 'Field Name or ID',
+								name: 'fieldId',
+								type: 'options',
+								typeOptions: {
+									loadOptionsMethod: 'getCustomFields',
+								},
+								default: '',
+								description:
+									'The ID of the field to add custom field to. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code-examples/expressions/">expression</a>.',
+							},
+							{
+								displayName: 'Value',
+								name: 'value',
+								type: 'string',
+								default: '',
+								description: 'The value to set on custom field',
+							},
+						],
+					},
+				],
 			},
 			{
 				displayName: 'Description',
@@ -358,35 +367,130 @@ export const caseFields = [
 				name: 'isEscalated',
 				type: 'boolean',
 				default: false,
-				description: 'Indicates whether the case has been escalated (true) or not.',
+				description: 'Whether the case has been escalated (true) or not',
 			},
 			{
-				displayName: 'Supplied Name',
-				name: 'suppliedName',
-				type: 'string',
+				displayName: 'Origin Name or ID',
+				name: 'origin',
+				type: 'options',
+				typeOptions: {
+					loadOptionsMethod: 'getCaseOrigins',
+				},
 				default: '',
-				description: `The name that was entered when the case was created. This field can't be updated after the case has been created`,
+				description:
+					'The source of the case, such as Email, Phone, or Web. Label is Case Origin. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code-examples/expressions/">expression</a>.',
 			},
 			{
-				displayName: 'Supplied Email',
-				name: 'suppliedEmail',
-				type: 'string',
+				displayName: 'Owner Name or ID',
+				name: 'owner',
+				type: 'options',
+				typeOptions: {
+					loadOptionsMethod: 'getCaseOwners',
+				},
 				default: '',
-				description: `The email address that was entered when the case was created. This field can't be updated after the case has been created.`,
+				description:
+					'The owner of the case. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code-examples/expressions/">expression</a>.',
 			},
 			{
-				displayName: 'Supplied Phone',
-				name: 'suppliedPhone',
+				displayName: 'Parent ID',
+				name: 'ParentId',
 				type: 'string',
 				default: '',
-				description: `The phone number that was entered when the case was created. This field can't be updated after the case has been created.`,
+				description: 'The ID of the parent case in the hierarchy. The label is Parent Case.',
+			},
+			{
+				displayName: 'Priority Name or ID',
+				name: 'priority',
+				type: 'options',
+				typeOptions: {
+					loadOptionsMethod: 'getCasePriorities',
+				},
+				default: '',
+				description:
+					'The importance or urgency of the case, such as High, Medium, or Low. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code-examples/expressions/">expression</a>.',
+			},
+			{
+				displayName: 'Reason Name or ID',
+				name: 'reason',
+				type: 'options',
+				typeOptions: {
+					loadOptionsMethod: 'getCaseReasons',
+				},
+				default: '',
+				description:
+					'The reason why the case was created, such as Instructions not clear, or User didn’t attend training. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code-examples/expressions/">expression</a>.',
+			},
+			{
+				displayName: 'Record Type Name or ID',
+				name: 'recordTypeId',
+				type: 'options',
+				description:
+					'Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code-examples/expressions/">expression</a>',
+				typeOptions: {
+					loadOptionsMethod: 'getRecordTypes',
+				},
+				default: '',
+			},
+			{
+				displayName: 'Status Name or ID',
+				name: 'status',
+				type: 'options',
+				typeOptions: {
+					loadOptionsMethod: 'getCaseStatuses',
+				},
+				default: '',
+				description:
+					'The status of the case, such as “New,” “Closed,” or “Escalated.” This field directly controls the IsClosed flag. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code-examples/expressions/">expression</a>.',
+			},
+			{
+				displayName: 'Subject',
+				name: 'subject',
+				type: 'string',
+				default: '',
+				description: 'The subject of the case. Limit: 255 characters.',
 			},
 			{
 				displayName: 'Supplied Company',
 				name: 'suppliedCompany',
 				type: 'string',
 				default: '',
-				description: `The company name that was entered when the case was created. This field can't be updated after the case has been created..`,
+				description:
+					"The company name that was entered when the case was created. This field can't be updated after the case has been created..",
+			},
+			{
+				displayName: 'Supplied Email',
+				name: 'suppliedEmail',
+				type: 'string',
+				default: '',
+				description:
+					"The email address that was entered when the case was created. This field can't be updated after the case has been created.",
+			},
+			{
+				displayName: 'Supplied Name',
+				name: 'suppliedName',
+				type: 'string',
+				default: '',
+				description:
+					"The name that was entered when the case was created. This field can't be updated after the case has been created.",
+			},
+			{
+				displayName: 'Supplied Phone',
+				name: 'suppliedPhone',
+				type: 'string',
+				default: '',
+				description:
+					"The phone number that was entered when the case was created. This field can't be updated after the case has been created.",
+			},
+			{
+				displayName: 'Type Name or ID',
+				name: 'type',
+				type: 'options',
+				typeOptions: {
+					loadOptionsMethod: 'getCaseTypes',
+				},
+				default: '',
+				description:
+					'The type of case. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code-examples/expressions/">expression</a>.',
 			},
 		],
 	},
@@ -402,15 +506,11 @@ export const caseFields = [
 		default: '',
 		displayOptions: {
 			show: {
-				resource: [
-					'case',
-				],
-				operation: [
-					'get',
-				],
+				resource: ['case'],
+				operation: ['get'],
 			},
 		},
-		description: 'ID of case that needs to be fetched.',
+		description: 'ID of case that needs to be fetched',
 	},
 
 	/* -------------------------------------------------------------------------- */
@@ -424,15 +524,11 @@ export const caseFields = [
 		default: '',
 		displayOptions: {
 			show: {
-				resource: [
-					'case',
-				],
-				operation: [
-					'delete',
-				],
+				resource: ['case'],
+				operation: ['delete'],
 			},
 		},
-		description: 'ID of case that needs to be fetched.',
+		description: 'ID of case that needs to be fetched',
 	},
 
 	/* -------------------------------------------------------------------------- */
@@ -444,16 +540,12 @@ export const caseFields = [
 		type: 'boolean',
 		displayOptions: {
 			show: {
-				resource: [
-					'case',
-				],
-				operation: [
-					'getAll',
-				],
+				resource: ['case'],
+				operation: ['getAll'],
 			},
 		},
 		default: false,
-		description: 'If all results should be returned or only up to a given limit.',
+		description: 'Whether to return all results or only up to a given limit',
 	},
 	{
 		displayName: 'Limit',
@@ -461,15 +553,9 @@ export const caseFields = [
 		type: 'number',
 		displayOptions: {
 			show: {
-				resource: [
-					'case',
-				],
-				operation: [
-					'getAll',
-				],
-				returnAll: [
-					false,
-				],
+				resource: ['case'],
+				operation: ['getAll'],
+				returnAll: [false],
 			},
 		},
 		typeOptions: {
@@ -477,7 +563,7 @@ export const caseFields = [
 			maxValue: 100,
 		},
 		default: 50,
-		description: 'How many results to return.',
+		description: 'Max number of results to return',
 	},
 	{
 		displayName: 'Options',
@@ -487,12 +573,8 @@ export const caseFields = [
 		default: {},
 		displayOptions: {
 			show: {
-				resource: [
-					'case',
-				],
-				operation: [
-					'getAll',
-				],
+				resource: ['case'],
+				operation: ['getAll'],
 			},
 		},
 		options: [
@@ -504,7 +586,7 @@ export const caseFields = [
 				typeOptions: {
 					multipleValues: true,
 				},
-				description: 'The condition to set.',
+				description: 'The condition to set',
 				default: {},
 				options: [
 					{
@@ -512,20 +594,30 @@ export const caseFields = [
 						displayName: 'Condition',
 						values: [
 							{
-								displayName: 'Field',
+								displayName: 'Field Name or ID',
 								name: 'field',
 								type: 'options',
 								typeOptions: {
 									loadOptionsMethod: 'getCaseFields',
 								},
 								default: '',
-								description: 'For date, number, or boolean, please use expressions.',
+								description:
+									'For date, number, or boolean, please use expressions. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code-examples/expressions/">expression</a>.',
 							},
+							// eslint-disable-next-line n8n-nodes-base/node-param-operation-without-no-data-expression
 							{
 								displayName: 'Operation',
 								name: 'operation',
 								type: 'options',
 								options: [
+									{
+										name: '<',
+										value: '<',
+									},
+									{
+										name: '<=',
+										value: '<=',
+									},
 									{
 										name: '=',
 										value: 'equal',
@@ -535,16 +627,8 @@ export const caseFields = [
 										value: '>',
 									},
 									{
-										name: '<',
-										value: '<',
-									},
-									{
 										name: '>=',
 										value: '>=',
-									},
-									{
-										name: '<=',
-										value: '<=',
 									},
 								],
 								default: 'equal',
@@ -580,15 +664,11 @@ export const caseFields = [
 		default: '',
 		displayOptions: {
 			show: {
-				resource: [
-					'case',
-				],
-				operation: [
-					'addComment',
-				],
+				resource: ['case'],
+				operation: ['addComment'],
 			},
 		},
-		description: 'ID of case that needs to be fetched.',
+		description: 'ID of case that needs to be fetched',
 	},
 	{
 		displayName: 'Options',
@@ -598,12 +678,8 @@ export const caseFields = [
 		default: {},
 		displayOptions: {
 			show: {
-				resource: [
-					'case',
-				],
-				operation: [
-					'addComment',
-				],
+				resource: ['case'],
+				operation: ['addComment'],
 			},
 		},
 		options: [
@@ -611,19 +687,18 @@ export const caseFields = [
 				displayName: 'Comment Body',
 				name: 'commentBody',
 				type: 'string',
-				typeOptions: {
-					alwaysOpenEditWindow: true,
-				},
 				default: '',
-				description: 'Text of the CaseComment. The maximum size of the comment body is 4,000 bytes. Label is Body.',
+				description:
+					'Text of the CaseComment. The maximum size of the comment body is 4,000 bytes. Label is Body.',
 			},
 			{
 				displayName: 'Is Published',
 				name: 'isPublished',
 				type: 'boolean',
 				default: false,
-				description: 'Indicates whether the CaseComment is visible to customers in the Self-Service portal (true) or not (false). ',
+				description:
+					'Whether the CaseComment is visible to customers in the Self-Service portal (true) or not (false)',
 			},
 		],
 	},
-] as INodeProperties[];
+];

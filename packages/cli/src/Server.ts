@@ -1,2019 +1,833 @@
-import * as express from 'express';
-import {
-	readFileSync,
-} from 'fs';
-import {
-	dirname as pathDirname,
-	join as pathJoin,
-	resolve as pathResolve,
-} from 'path';
-import {
-	getConnection,
-	getConnectionManager,
-	In,
-} from 'typeorm';
-import * as bodyParser from 'body-parser';
-require('body-parser-xml')(bodyParser);
-import * as history from 'connect-history-api-fallback';
-import * as _ from 'lodash';
-import * as clientOAuth2 from 'client-oauth2';
-import * as clientOAuth1 from 'oauth-1.0a';
-import { RequestOptions } from 'oauth-1.0a';
-import * as csrf from 'csrf';
-import * as requestPromise from 'request-promise-native';
-import { createHmac } from 'crypto';
-import { compare } from '@node-rs/bcrypt';
-import * as promClient from 'prom-client';
+/* eslint-disable @typescript-eslint/no-unsafe-argument */
+/* eslint-disable @typescript-eslint/no-unnecessary-type-assertion */
+/* eslint-disable prefer-const */
+/* eslint-disable @typescript-eslint/no-shadow */
+/* eslint-disable @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+import assert from 'assert';
+import { exec as callbackExec } from 'child_process';
+import { access as fsAccess } from 'fs/promises';
+import os from 'os';
+import { join as pathJoin } from 'path';
+import { promisify } from 'util';
+import cookieParser from 'cookie-parser';
+import express from 'express';
+import { engine as expressHandlebars } from 'express-handlebars';
+import type { ServeStaticOptions } from 'serve-static';
+import type { FindManyOptions, FindOptionsWhere } from 'typeorm';
+import { Not, In } from 'typeorm';
 
-import {
-	ActiveExecutions,
-	ActiveWorkflowRunner,
-	CredentialsHelper,
-	CredentialsOverwrites,
-	CredentialTypes,
-	Db,
-	ExternalHooks,
-	GenericHelpers,
-	IActivationError,
-	ICredentialsDb,
-	ICredentialsDecryptedDb,
-	ICredentialsDecryptedResponse,
-	ICredentialsOverwrite,
-	ICredentialsResponse,
-	ICustomRequest,
-	IExecutionDeleteFilter,
-	IExecutionFlatted,
-	IExecutionFlattedDb,
-	IExecutionFlattedResponse,
-	IExecutionPushResponse,
-	IExecutionResponse,
-	IExecutionsListResponse,
-	IExecutionsStopData,
+import { InstanceSettings } from 'n8n-core';
+
+import type {
+	ICredentialTypes,
+	ExecutionStatus,
 	IExecutionsSummary,
-	IExternalHooksClass,
 	IN8nUISettings,
-	IPackageVersions,
-	IWorkflowBase,
-	IWorkflowExecutionDataProcess,
-	IWorkflowResponse,
-	IWorkflowShortResponse,
-	LoadNodesAndCredentials,
-	NodeTypes,
-	Push,
-	ResponseHelper,
-	TestWebhooks,
-	WebhookHelpers,
-	WebhookServer,
-	WorkflowCredentials,
-	WorkflowExecuteAdditionalData,
-	WorkflowRunner,
-} from './';
-
-import {
-	Credentials,
-	LoadNodeParameterOptions,
-	UserSettings,
-} from 'n8n-core';
-
-import {
-	ICredentialsEncrypted,
-	ICredentialType,
-	IDataObject,
-	INodeCredentials,
-	INodeParameters,
-	INodePropertyOptions,
-	INodeTypeDescription,
-	IRunData,
-	IWorkflowCredentials,
-	Workflow,
-	WorkflowExecuteMode,
 } from 'n8n-workflow';
+import { jsonParse } from 'n8n-workflow';
 
-import {
-	FindManyOptions,
-	FindOneOptions,
-	LessThanOrEqual,
-	Not,
-} from 'typeorm';
-
-import * as basicAuth from 'basic-auth';
-import * as compression from 'compression';
-import * as config from '../config';
-import * as jwt from 'jsonwebtoken';
-import * as jwks from 'jwks-rsa';
 // @ts-ignore
-import * as timezones from 'google-timezones-json';
-import * as parseUrl from 'parseurl';
-import * as querystring from 'querystring';
-import * as Queue from '../src/Queue';
-import { OptionsWithUrl } from 'request-promise-native';
-import { Registry } from 'prom-client';
+import timezones from 'google-timezones-json';
+import history from 'connect-history-api-fallback';
 
-class App {
+import config from '@/config';
+import { Queue } from '@/Queue';
+import { getSharedWorkflowIds } from '@/WorkflowHelpers';
 
-	app: express.Application;
-	activeWorkflowRunner: ActiveWorkflowRunner.ActiveWorkflowRunner;
-	testWebhooks: TestWebhooks.TestWebhooks;
-	endpointWebhook: string;
-	endpointWebhookTest: string;
-	endpointPresetCredentials: string;
-	externalHooks: IExternalHooksClass;
-	saveDataErrorExecution: string;
-	saveDataSuccessExecution: string;
-	saveManualExecutions: boolean;
-	executionTimeout: number;
-	maxExecutionTimeout: number;
-	timezone: string;
-	activeExecutionsInstance: ActiveExecutions.ActiveExecutions;
-	push: Push.Push;
-	versions: IPackageVersions | undefined;
-	restEndpoint: string;
-	frontendSettings: IN8nUISettings;
-	protocol: string;
-	sslKey: string;
-	sslCert: string;
-	payloadSizeMax: number;
+import { workflowsController } from '@/workflows/workflows.controller';
+import {
+	EDITOR_UI_DIST_DIR,
+	inDevelopment,
+	inE2ETests,
+	N8N_VERSION,
+	TEMPLATES_DIR,
+} from '@/constants';
+import { credentialsController } from '@/credentials/credentials.controller';
+import type { CurlHelper, ExecutionRequest, WorkflowRequest } from '@/requests';
+import { registerController } from '@/decorators';
+import { AuthController } from '@/controllers/auth.controller';
+import { BinaryDataController } from '@/controllers/binaryData.controller';
+import { DynamicNodeParametersController } from '@/controllers/dynamicNodeParameters.controller';
+import { LdapController } from '@/controllers/ldap.controller';
+import { MeController } from '@/controllers/me.controller';
+import { MFAController } from '@/controllers/mfa.controller';
+import { NodeTypesController } from '@/controllers/nodeTypes.controller';
+import { OAuth1CredentialController } from '@/controllers/oauth/oAuth1Credential.controller';
+import { OAuth2CredentialController } from '@/controllers/oauth/oAuth2Credential.controller';
+import { OwnerController } from '@/controllers/owner.controller';
+import { PasswordResetController } from '@/controllers/passwordReset.controller';
+import { TagsController } from '@/controllers/tags.controller';
+import { TranslationController } from '@/controllers/translation.controller';
+import { UsersController } from '@/controllers/users.controller';
+import { WorkflowStatisticsController } from '@/controllers/workflowStatistics.controller';
+import { ExternalSecretsController } from '@/ExternalSecrets/ExternalSecrets.controller.ee';
+import { executionsController } from '@/executions/executions.controller';
+import { isApiEnabled, loadPublicApiVersions } from '@/PublicApi';
+import { whereClause } from '@/UserManagement/UserManagementHelper';
+import { UserManagementMailer } from '@/UserManagement/email';
+import type { ICredentialsOverwrite, IDiagnosticInfo, IExecutionsStopData } from '@/Interfaces';
+import { ActiveExecutions } from '@/ActiveExecutions';
+import { CredentialsOverwrites } from '@/CredentialsOverwrites';
+import { CredentialTypes } from '@/CredentialTypes';
+import { LoadNodesAndCredentials } from '@/LoadNodesAndCredentials';
+import { NodeTypes } from '@/NodeTypes';
+import * as ResponseHelper from '@/ResponseHelper';
+import { WaitTracker } from '@/WaitTracker';
+import { toHttpNodeParameters } from '@/CurlConverterHelper';
+import { EventBusController } from '@/eventbus/eventBus.controller';
+import { EventBusControllerEE } from '@/eventbus/eventBus.controller.ee';
+import { licenseController } from './license/license.controller';
+import { setupPushServer, setupPushHandler } from '@/push';
+import { setupAuthMiddlewares } from './middlewares';
+import { handleLdapInit, isLdapEnabled } from './Ldap/helpers';
+import { AbstractServer } from './AbstractServer';
+import { PostHogClient } from './posthog';
+import { eventBus } from './eventbus';
+import { Container } from 'typedi';
+import { InternalHooks } from './InternalHooks';
+import { License } from './License';
+import { getStatusUsingPreviousExecutionStatusMethod } from './executions/executionHelpers';
+import { SamlController } from './sso/saml/routes/saml.controller.ee';
+import { SamlService } from './sso/saml/saml.service.ee';
+import { VariablesController } from './environments/variables/variables.controller.ee';
+import { LdapManager } from './Ldap/LdapManager.ee';
+import {
+	isLdapCurrentAuthenticationMethod,
+	isSamlCurrentAuthenticationMethod,
+} from './sso/ssoHelpers';
+import { SourceControlService } from '@/environments/sourceControl/sourceControl.service.ee';
+import { SourceControlController } from '@/environments/sourceControl/sourceControl.controller.ee';
 
-	presetCredentialsLoaded: boolean;
+import type { ExecutionEntity } from '@db/entities/ExecutionEntity';
+import { ExecutionRepository } from '@db/repositories/execution.repository';
+import { SettingsRepository } from '@db/repositories/settings.repository';
+import { SharedCredentialsRepository } from '@db/repositories/sharedCredentials.repository';
+import { SharedWorkflowRepository } from '@db/repositories/sharedWorkflow.repository';
+import { WorkflowRepository } from '@db/repositories/workflow.repository';
+
+import { MfaService } from './Mfa/mfa.service';
+import { handleMfaDisable, isMfaFeatureEnabled } from './Mfa/helpers';
+import type { FrontendService } from './services/frontend.service';
+import { RoleService } from './services/role.service';
+import { UserService } from './services/user.service';
+import { OrchestrationController } from './controllers/orchestration.controller';
+import { WorkflowHistoryController } from './workflows/workflowHistory/workflowHistory.controller.ee';
+import { InvitationController } from './controllers/invitation.controller';
+import { CollaborationService } from './collaboration/collaboration.service';
+import { BadRequestError } from './errors/response-errors/bad-request.error';
+import { NotFoundError } from './errors/response-errors/not-found.error';
+
+const exec = promisify(callbackExec);
+
+export class Server extends AbstractServer {
+	private endpointPresetCredentials: string;
+
+	private waitTracker: WaitTracker;
+
+	private activeExecutionsInstance: ActiveExecutions;
+
+	private presetCredentialsLoaded: boolean;
+
+	private loadNodesAndCredentials: LoadNodesAndCredentials;
+
+	private nodeTypes: NodeTypes;
+
+	private credentialTypes: ICredentialTypes;
+
+	private frontendService?: FrontendService;
+
+	private postHog: PostHogClient;
+
+	private collaborationService: CollaborationService;
 
 	constructor() {
-		this.app = express();
+		super('main');
 
-		this.endpointWebhook = config.get('endpoints.webhook') as string;
-		this.endpointWebhookTest = config.get('endpoints.webhookTest') as string;
-		this.saveDataErrorExecution = config.get('executions.saveDataOnError') as string;
-		this.saveDataSuccessExecution = config.get('executions.saveDataOnSuccess') as string;
-		this.saveManualExecutions = config.get('executions.saveDataManualExecutions') as boolean;
-		this.executionTimeout = config.get('executions.timeout') as number;
-		this.maxExecutionTimeout = config.get('executions.maxTimeout') as number;
-		this.payloadSizeMax = config.get('endpoints.payloadSizeMax') as number;
-		this.timezone = config.get('generic.timezone') as string;
-		this.restEndpoint = config.get('endpoints.rest') as string;
+		this.app.engine('handlebars', expressHandlebars({ defaultLayout: false }));
+		this.app.set('view engine', 'handlebars');
+		this.app.set('views', TEMPLATES_DIR);
 
-		this.activeWorkflowRunner = ActiveWorkflowRunner.getInstance();
-		this.testWebhooks = TestWebhooks.getInstance();
-		this.push = Push.getInstance();
+		this.testWebhooksEnabled = true;
+		this.webhooksEnabled = !config.getEnv('endpoints.disableProductionWebhooksOnMainProcess');
+	}
 
-		this.activeExecutionsInstance = ActiveExecutions.getInstance();
+	async start() {
+		this.loadNodesAndCredentials = Container.get(LoadNodesAndCredentials);
+		this.credentialTypes = Container.get(CredentialTypes);
+		this.nodeTypes = Container.get(NodeTypes);
 
-		this.protocol = config.get('protocol');
-		this.sslKey = config.get('ssl_key');
-		this.sslCert = config.get('ssl_cert');
+		if (!config.getEnv('endpoints.disableUi')) {
+			// eslint-disable-next-line @typescript-eslint/no-var-requires
+			this.frontendService = Container.get(require('@/services/frontend.service').FrontendService);
+		}
 
-		this.externalHooks = ExternalHooks();
+		this.activeExecutionsInstance = Container.get(ActiveExecutions);
+		this.waitTracker = Container.get(WaitTracker);
+		this.postHog = Container.get(PostHogClient);
 
 		this.presetCredentialsLoaded = false;
-		this.endpointPresetCredentials = config.get('credentials.overwrite.endpoint') as string;
+		this.endpointPresetCredentials = config.getEnv('credentials.overwrite.endpoint');
 
-		const urlBaseWebhook = WebhookHelpers.getWebhookBaseUrl();
+		await super.start();
+		this.logger.debug(`Server ID: ${this.uniqueInstanceId}`);
 
-		this.frontendSettings = {
-			endpointWebhook: this.endpointWebhook,
-			endpointWebhookTest: this.endpointWebhookTest,
-			saveDataErrorExecution: this.saveDataErrorExecution,
-			saveDataSuccessExecution: this.saveDataSuccessExecution,
-			saveManualExecutions: this.saveManualExecutions,
-			executionTimeout: this.executionTimeout,
-			maxExecutionTimeout: this.maxExecutionTimeout,
-			timezone: this.timezone,
-			urlBaseWebhook,
-			versionCli: '',
-			oauthCallbackUrls: {
-				'oauth1': urlBaseWebhook + `${this.restEndpoint}/oauth1-credential/callback`,
-				'oauth2': urlBaseWebhook + `${this.restEndpoint}/oauth2-credential/callback`,
+		const cpus = os.cpus();
+		const binaryDataConfig = config.getEnv('binaryDataManager');
+
+		const isS3Selected = config.getEnv('binaryDataManager.mode') === 's3';
+		const isS3Available = config.getEnv('binaryDataManager.availableModes').includes('s3');
+		const isS3Licensed = Container.get(License).isBinaryDataS3Licensed();
+
+		const diagnosticInfo: IDiagnosticInfo = {
+			databaseType: config.getEnv('database.type'),
+			disableProductionWebhooksOnMainProcess: config.getEnv(
+				'endpoints.disableProductionWebhooksOnMainProcess',
+			),
+			notificationsEnabled: config.getEnv('versionNotifications.enabled'),
+			versionCli: N8N_VERSION,
+			systemInfo: {
+				os: {
+					type: os.type(),
+					version: os.version(),
+				},
+				memory: os.totalmem() / 1024,
+				cpus: {
+					count: cpus.length,
+					model: cpus[0].model,
+					speed: cpus[0].speed,
+				},
 			},
+			executionVariables: {
+				executions_process: config.getEnv('executions.process'),
+				executions_mode: config.getEnv('executions.mode'),
+				executions_timeout: config.getEnv('executions.timeout'),
+				executions_timeout_max: config.getEnv('executions.maxTimeout'),
+				executions_data_save_on_error: config.getEnv('executions.saveDataOnError'),
+				executions_data_save_on_success: config.getEnv('executions.saveDataOnSuccess'),
+				executions_data_save_on_progress: config.getEnv('executions.saveExecutionProgress'),
+				executions_data_save_manual_executions: config.getEnv(
+					'executions.saveDataManualExecutions',
+				),
+				executions_data_prune: config.getEnv('executions.pruneData'),
+				executions_data_max_age: config.getEnv('executions.pruneDataMaxAge'),
+			},
+			deploymentType: config.getEnv('deployment.type'),
+			binaryDataMode: binaryDataConfig.mode,
+			smtp_set_up: config.getEnv('userManagement.emails.mode') === 'smtp',
+			ldap_allowed: isLdapCurrentAuthenticationMethod(),
+			saml_enabled: isSamlCurrentAuthenticationMethod(),
+			binary_data_s3: isS3Available && isS3Selected && isS3Licensed,
+			multi_main_setup_enabled: config.getEnv('multiMainSetup.enabled'),
+			licensePlanName: Container.get(License).getPlanName(),
+			licenseTenantId: config.getEnv('license.tenantId'),
 		};
+
+		if (inDevelopment && process.env.N8N_DEV_RELOAD === 'true') {
+			void this.loadNodesAndCredentials.setupHotReload();
+		}
+
+		void Container.get(WorkflowRepository)
+			.findOne({
+				select: ['createdAt'],
+				order: { createdAt: 'ASC' },
+				where: {},
+			})
+			.then(async (workflow) =>
+				Container.get(InternalHooks).onServerStarted(diagnosticInfo, workflow?.createdAt),
+			);
+		this.collaborationService = Container.get(CollaborationService);
 	}
 
+	private async registerControllers(ignoredEndpoints: Readonly<string[]>) {
+		const { app, externalHooks, activeWorkflowRunner, nodeTypes, logger } = this;
+		setupAuthMiddlewares(app, ignoredEndpoints, this.restEndpoint);
 
-	/**
-	 * Returns the current epoch time
-	 *
-	 * @returns {number}
-	 * @memberof App
-	 */
-	getCurrentDate(): Date {
-		return new Date();
+		const internalHooks = Container.get(InternalHooks);
+		const mailer = Container.get(UserManagementMailer);
+		const userService = Container.get(UserService);
+		const postHog = this.postHog;
+		const mfaService = Container.get(MfaService);
+
+		const controllers: object[] = [
+			new EventBusController(),
+			new EventBusControllerEE(),
+			Container.get(AuthController),
+			Container.get(OAuth1CredentialController),
+			Container.get(OAuth2CredentialController),
+			new OwnerController(
+				config,
+				logger,
+				internalHooks,
+				Container.get(SettingsRepository),
+				userService,
+				postHog,
+			),
+			Container.get(MeController),
+			Container.get(DynamicNodeParametersController),
+			new NodeTypesController(config, nodeTypes),
+			Container.get(PasswordResetController),
+			Container.get(TagsController),
+			new TranslationController(config, this.credentialTypes),
+			new UsersController(
+				logger,
+				externalHooks,
+				internalHooks,
+				Container.get(SharedCredentialsRepository),
+				Container.get(SharedWorkflowRepository),
+				activeWorkflowRunner,
+				Container.get(RoleService),
+				userService,
+			),
+			Container.get(SamlController),
+			Container.get(SourceControlController),
+			Container.get(WorkflowStatisticsController),
+			Container.get(ExternalSecretsController),
+			Container.get(OrchestrationController),
+			Container.get(WorkflowHistoryController),
+			Container.get(BinaryDataController),
+			Container.get(VariablesController),
+			new InvitationController(
+				config,
+				logger,
+				internalHooks,
+				externalHooks,
+				Container.get(UserService),
+				postHog,
+			),
+			Container.get(VariablesController),
+		];
+
+		if (isLdapEnabled()) {
+			const { service, sync } = LdapManager.getInstance();
+			controllers.push(new LdapController(service, sync, internalHooks));
+		}
+
+		if (config.getEnv('nodes.communityPackages.enabled')) {
+			const { CommunityPackagesController } = await import(
+				'@/controllers/communityPackages.controller'
+			);
+			controllers.push(Container.get(CommunityPackagesController));
+		}
+
+		if (inE2ETests) {
+			const { E2EController } = await import('./controllers/e2e.controller');
+			controllers.push(Container.get(E2EController));
+		}
+
+		if (isMfaFeatureEnabled()) {
+			controllers.push(new MFAController(mfaService));
+		}
+
+		controllers.forEach((controller) => registerController(app, config, controller));
 	}
 
-
-	async config(): Promise<void> {
-
-		const enableMetrics = config.get('endpoints.metrics.enable') as boolean;
-		let register: Registry;
-
-		if (enableMetrics === true) {
-			const prefix = config.get('endpoints.metrics.prefix') as string;
-			register = new promClient.Registry();
-			register.setDefaultLabels({ prefix });
-			promClient.collectDefaultMetrics({ register });
+	async configure(): Promise<void> {
+		if (config.getEnv('endpoints.metrics.enable')) {
+			const { MetricsService } = await import('@/services/metrics.service');
+			await Container.get(MetricsService).configureMetrics(this.app);
 		}
 
-		this.versions = await GenericHelpers.getVersions();
-		this.frontendSettings.versionCli = this.versions.cli;
-
-		await this.externalHooks.run('frontend.settings', [this.frontendSettings]);
-
-		const excludeEndpoints = config.get('security.excludeEndpoints') as string;
-
-		const ignoredEndpoints = ['healthz', 'metrics', this.endpointWebhook, this.endpointWebhookTest, this.endpointPresetCredentials];
-		ignoredEndpoints.push.apply(ignoredEndpoints, excludeEndpoints.split(':'));
-
-		const authIgnoreRegex = new RegExp(`^\/(${_(ignoredEndpoints).compact().join('|')})\/?.*$`);
-
-		// Check for basic auth credentials if activated
-		const basicAuthActive = config.get('security.basicAuth.active') as boolean;
-		if (basicAuthActive === true) {
-			const basicAuthUser = await GenericHelpers.getConfigValue('security.basicAuth.user') as string;
-			if (basicAuthUser === '') {
-				throw new Error('Basic auth is activated but no user got defined. Please set one!');
-			}
-
-			const basicAuthPassword = await GenericHelpers.getConfigValue('security.basicAuth.password') as string;
-			if (basicAuthPassword === '') {
-				throw new Error('Basic auth is activated but no password got defined. Please set one!');
-			}
-
-			const basicAuthHashEnabled = await GenericHelpers.getConfigValue('security.basicAuth.hash') as boolean;
-
-			let validPassword: null | string = null;
-
-			this.app.use(async (req: express.Request, res: express.Response, next: express.NextFunction) => {
-				if (req.url.match(authIgnoreRegex)) {
-					return next();
-				}
-				const realm = 'n8n - Editor UI';
-				const basicAuthData = basicAuth(req);
-
-				if (basicAuthData === undefined) {
-					// Authorization data is missing
-					return ResponseHelper.basicAuthAuthorizationError(res, realm, 'Authorization is required!');
-				}
-
-				if (basicAuthData.name === basicAuthUser) {
-					if (basicAuthHashEnabled === true) {
-						if (validPassword === null && await compare(basicAuthData.pass, basicAuthPassword)) {
-							// Password is valid so save for future requests
-							validPassword = basicAuthData.pass;
-						}
-
-						if (validPassword === basicAuthData.pass && validPassword !== null) {
-							// Provided hash is correct
-							return next();
-						}
-					} else {
-						if (basicAuthData.pass === basicAuthPassword) {
-							// Provided password is correct
-							return next();
-						}
-					}
-				}
-
-				// Provided authentication data is wrong
-				return ResponseHelper.basicAuthAuthorizationError(res, realm, 'Authorization data is wrong!');
+		const { frontendService } = this;
+		if (frontendService) {
+			frontendService.addToSettings({
+				isNpmAvailable: await exec('npm --version')
+					.then(() => true)
+					.catch(() => false),
+				versionCli: N8N_VERSION,
 			});
+
+			await this.externalHooks.run('frontend.settings', [frontendService.getSettings()]);
 		}
 
-		// Check for and validate JWT if configured
-		const jwtAuthActive = config.get('security.jwtAuth.active') as boolean;
-		if (jwtAuthActive === true) {
-			const jwtAuthHeader = await GenericHelpers.getConfigValue('security.jwtAuth.jwtHeader') as string;
-			if (jwtAuthHeader === '') {
-				throw new Error('JWT auth is activated but no request header was defined. Please set one!');
+		await this.postHog.init();
+
+		const publicApiEndpoint = config.getEnv('publicApi.path');
+		const excludeEndpoints = config.getEnv('security.excludeEndpoints');
+
+		const ignoredEndpoints: Readonly<string[]> = [
+			'assets',
+			'healthz',
+			'metrics',
+			'e2e',
+			this.endpointPresetCredentials,
+			isApiEnabled() ? '' : publicApiEndpoint,
+			...excludeEndpoints.split(':'),
+		].filter((u) => !!u);
+
+		assert(
+			!ignoredEndpoints.includes(this.restEndpoint),
+			`REST endpoint cannot be set to any of these values: ${ignoredEndpoints.join()} `,
+		);
+
+		// ----------------------------------------
+		// Public API
+		// ----------------------------------------
+
+		if (isApiEnabled()) {
+			const { apiRouters, apiLatestVersion } = await loadPublicApiVersions(publicApiEndpoint);
+			this.app.use(...apiRouters);
+			if (frontendService) {
+				frontendService.settings.publicApi.latestVersion = apiLatestVersion;
 			}
-			const jwksUri = await GenericHelpers.getConfigValue('security.jwtAuth.jwksUri') as string;
-			if (jwksUri === '') {
-				throw new Error('JWT auth is activated but no JWK Set URI was defined. Please set one!');
-			}
-			const jwtHeaderValuePrefix = await GenericHelpers.getConfigValue('security.jwtAuth.jwtHeaderValuePrefix') as string;
-			const jwtIssuer = await GenericHelpers.getConfigValue('security.jwtAuth.jwtIssuer') as string;
-			const jwtNamespace = await GenericHelpers.getConfigValue('security.jwtAuth.jwtNamespace') as string;
-			const jwtAllowedTenantKey = await GenericHelpers.getConfigValue('security.jwtAuth.jwtAllowedTenantKey') as string;
-			const jwtAllowedTenant = await GenericHelpers.getConfigValue('security.jwtAuth.jwtAllowedTenant') as string;
-
-			function isTenantAllowed(decodedToken: object): boolean {
-				if (jwtNamespace === '' || jwtAllowedTenantKey === '' || jwtAllowedTenant === '') return true;
-				else {
-					for (const [k, v] of Object.entries(decodedToken)) {
-						if (k === jwtNamespace) {
-							for (const [kn, kv] of Object.entries(v)) {
-								if (kn === jwtAllowedTenantKey && kv === jwtAllowedTenant) {
-									return true;
-								}
-							}
-						}
-					}
-				}
-				return false;
-			}
-
-			this.app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
-				if (req.url.match(authIgnoreRegex)) {
-					return next();
-				}
-
-				let token = req.header(jwtAuthHeader) as string;
-				if (token === undefined || token === '') {
-					return ResponseHelper.jwtAuthAuthorizationError(res, "Missing token");
-				}
-				if (jwtHeaderValuePrefix !== '' && token.startsWith(jwtHeaderValuePrefix)) {
-					token = token.replace(jwtHeaderValuePrefix + ' ', '').trimLeft();
-				}
-
-				const jwkClient = jwks({ cache: true, jwksUri });
-				function getKey(header: any, callback: Function) { // tslint:disable-line:no-any
-					jwkClient.getSigningKey(header.kid, (err: Error, key: any) => { // tslint:disable-line:no-any
-						if (err) throw ResponseHelper.jwtAuthAuthorizationError(res, err.message);
-
-						const signingKey = key.publicKey || key.rsaPublicKey;
-						callback(null, signingKey);
-					});
-				}
-
-				const jwtVerifyOptions: jwt.VerifyOptions = {
-					issuer: jwtIssuer !== '' ? jwtIssuer : undefined,
-					ignoreExpiration: false,
-				};
-
-				jwt.verify(token, getKey, jwtVerifyOptions, (err: jwt.VerifyErrors, decoded: object) => {
-					if (err) ResponseHelper.jwtAuthAuthorizationError(res, 'Invalid token');
-					else if (!isTenantAllowed(decoded)) ResponseHelper.jwtAuthAuthorizationError(res, 'Tenant not allowed');
-					else next();
-				});
-			});
 		}
+		// Parse cookies for easier access
+		this.app.use(cookieParser());
 
-		// Get push connections
-		this.app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
-			if (req.url.indexOf(`/${this.restEndpoint}/push`) === 0) {
-				// TODO: Later also has to add some kind of authentication token
-				if (req.query.sessionId === undefined) {
-					next(new Error('The query parameter "sessionId" is missing!'));
-					return;
-				}
-
-				this.push.add(req.query.sessionId as string, req, res);
-				return;
-			}
-			next();
-		});
-
-		// Compress the response data
-		this.app.use(compression());
-
-		// Make sure that each request has the "parsedUrl" parameter
-		this.app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
-			(req as ICustomRequest).parsedUrl = parseUrl(req);
-			// @ts-ignore
-			req.rawBody = Buffer.from('', 'base64');
-			next();
-		});
-
-		// Support application/json type post data
-		this.app.use(bodyParser.json({
-			limit: this.payloadSizeMax + 'mb', verify: (req, res, buf) => {
-				// @ts-ignore
-				req.rawBody = buf;
-			},
-		}));
-
-		// Support application/xml type post data
-		// @ts-ignore
-		this.app.use(bodyParser.xml({
-			limit: this.payloadSizeMax + 'mb', xmlParseOptions: {
-				normalize: true,     // Trim whitespace inside text nodes
-				normalizeTags: true, // Transform tags to lowercase
-				explicitArray: false, // Only put properties in array if length > 1
-			},
-		}));
-
-		this.app.use(bodyParser.text({
-			limit: this.payloadSizeMax + 'mb', verify: (req, res, buf) => {
-				// @ts-ignore
-				req.rawBody = buf;
-			},
-		}));
+		const { restEndpoint, app } = this;
+		setupPushHandler(restEndpoint, app);
 
 		// Make sure that Vue history mode works properly
-		this.app.use(history({
-			rewrites: [
-				{
-					from: new RegExp(`^\/(${this.restEndpoint}|healthz|metrics|css|js|${this.endpointWebhook}|${this.endpointWebhookTest})\/?.*$`),
-					to: (context) => {
-						return context.parsedUrl!.pathname!.toString();
+		this.app.use(
+			history({
+				rewrites: [
+					{
+						from: new RegExp(`^/(${[this.restEndpoint, ...ignoredEndpoints].join('|')})/?.*$`),
+						to: (context) => {
+							return context.parsedUrl.pathname!.toString();
+						},
 					},
-				},
-			],
-		}));
+				],
+			}),
+		);
 
-		//support application/x-www-form-urlencoded post data
-		this.app.use(bodyParser.urlencoded({
-			extended: false,
-			verify: (req, res, buf) => {
-				// @ts-ignore
-				req.rawBody = buf;
-			},
-		}));
-
-		if (process.env['NODE_ENV'] !== 'production') {
-			this.app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
-				// Allow access also from frontend when developing
-				res.header('Access-Control-Allow-Origin', 'http://localhost:8080');
-				res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, PATCH, DELETE');
-				res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, sessionid');
-				next();
-			});
+		if (config.getEnv('executions.mode') === 'queue') {
+			await Container.get(Queue).init();
 		}
 
+		await handleLdapInit();
 
-		this.app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
-			if (Db.collections.Workflow === null) {
-				const error = new ResponseHelper.ResponseError('Database is not ready!', undefined, 503);
-				return ResponseHelper.sendErrorResponse(res, error);
-			}
+		await handleMfaDisable();
 
-			next();
-		});
+		await this.registerControllers(ignoredEndpoints);
 
-
-
-		// ----------------------------------------
-		// Healthcheck
-		// ----------------------------------------
-
-
-		// Does very basic health check
-		this.app.get('/healthz', async (req: express.Request, res: express.Response) => {
-
-			const connectionManager = getConnectionManager();
-
-			if (connectionManager.connections.length === 0) {
-				const error = new ResponseHelper.ResponseError('No Database connection found!', undefined, 503);
-				return ResponseHelper.sendErrorResponse(res, error);
-			}
-
-			if (connectionManager.connections[0].isConnected === false) {
-				// Connection is not active
-				const error = new ResponseHelper.ResponseError('Database connection not active!', undefined, 503);
-				return ResponseHelper.sendErrorResponse(res, error);
-			}
-
-			// Everything fine
-			const responseData = {
-				status: 'ok',
-			};
-
-			ResponseHelper.sendSuccessResponse(res, responseData, true, 200);
-		});
-
-		// ----------------------------------------
-		// Metrics
-		// ----------------------------------------
-		if (enableMetrics === true) {
-			this.app.get('/metrics', async (req: express.Request, res: express.Response) => {
-				const response = await register.metrics();
-				res.setHeader('Content-Type', register.contentType);
-				ResponseHelper.sendSuccessResponse(res, response, true, 200);
-			});
-		}
+		this.app.use(`/${this.restEndpoint}/credentials`, credentialsController);
 
 		// ----------------------------------------
 		// Workflow
 		// ----------------------------------------
-
-
-		// Creates a new workflow
-		this.app.post(`/${this.restEndpoint}/workflows`, ResponseHelper.send(async (req: express.Request, res: express.Response): Promise<IWorkflowResponse> => {
-
-			const newWorkflowData = req.body as IWorkflowBase;
-
-			newWorkflowData.name = newWorkflowData.name.trim();
-			newWorkflowData.createdAt = this.getCurrentDate();
-			newWorkflowData.updatedAt = this.getCurrentDate();
-
-			newWorkflowData.id = undefined;
-
-			await this.externalHooks.run('workflow.create', [newWorkflowData]);
-
-			// Save the workflow in DB
-			const result = await Db.collections.Workflow!.save(newWorkflowData);
-
-			// Convert to response format in which the id is a string
-			(result as IWorkflowBase as IWorkflowResponse).id = result.id.toString();
-			return result as IWorkflowBase as IWorkflowResponse;
-
-		}));
-
-
-		// Reads and returns workflow data from an URL
-		this.app.get(`/${this.restEndpoint}/workflows/from-url`, ResponseHelper.send(async (req: express.Request, res: express.Response): Promise<IWorkflowResponse> => {
-			if (req.query.url === undefined) {
-				throw new ResponseHelper.ResponseError(`The parameter "url" is missing!`, undefined, 400);
-			}
-			if (!(req.query.url as string).match(/^http[s]?:\/\/.*\.json$/i)) {
-				throw new ResponseHelper.ResponseError(`The parameter "url" is not valid! It does not seem to be a URL pointing to a n8n workflow JSON file.`, undefined, 400);
-			}
-			const data = await requestPromise.get(req.query.url as string);
-
-			let workflowData: IWorkflowResponse | undefined;
-			try {
-				workflowData = JSON.parse(data);
-			} catch (error) {
-				throw new ResponseHelper.ResponseError(`The URL does not point to valid JSON file!`, undefined, 400);
-			}
-
-			// Do a very basic check if it is really a n8n-workflow-json
-			if (workflowData === undefined || workflowData.nodes === undefined || !Array.isArray(workflowData.nodes) ||
-				workflowData.connections === undefined || typeof workflowData.connections !== 'object' ||
-				Array.isArray(workflowData.connections)) {
-				throw new ResponseHelper.ResponseError(`The data in the file does not seem to be a n8n workflow JSON file!`, undefined, 400);
-			}
-
-			return workflowData;
-		}));
-
-
-		// Returns workflows
-		this.app.get(`/${this.restEndpoint}/workflows`, ResponseHelper.send(async (req: express.Request, res: express.Response): Promise<IWorkflowShortResponse[]> => {
-			const findQuery = {} as FindManyOptions;
-			if (req.query.filter) {
-				findQuery.where = JSON.parse(req.query.filter as string);
-			}
-
-			// Return only the fields we need
-			findQuery.select = ['id', 'name', 'active', 'createdAt', 'updatedAt'];
-
-			const results = await Db.collections.Workflow!.find(findQuery);
-
-			for (const entry of results) {
-				(entry as unknown as IWorkflowShortResponse).id = entry.id.toString();
-			}
-
-			return results as unknown as IWorkflowShortResponse[];
-		}));
-
-
-		// Returns a specific workflow
-		this.app.get(`/${this.restEndpoint}/workflows/:id`, ResponseHelper.send(async (req: express.Request, res: express.Response): Promise<IWorkflowResponse | undefined> => {
-			const result = await Db.collections.Workflow!.findOne(req.params.id);
-
-			if (result === undefined) {
-				return undefined;
-			}
-
-			// Convert to response format in which the id is a string
-			(result as IWorkflowBase as IWorkflowResponse).id = result.id.toString();
-			return result as IWorkflowBase as IWorkflowResponse;
-		}));
-
-
-		// Updates an existing workflow
-		this.app.patch(`/${this.restEndpoint}/workflows/:id`, ResponseHelper.send(async (req: express.Request, res: express.Response): Promise<IWorkflowResponse> => {
-
-			const newWorkflowData = req.body as IWorkflowBase;
-			const id = req.params.id;
-
-			await this.externalHooks.run('workflow.update', [newWorkflowData]);
-
-			const isActive = await this.activeWorkflowRunner.isActive(id);
-
-			if (isActive) {
-				// When workflow gets saved always remove it as the triggers could have been
-				// changed and so the changes would not take effect
-				await this.activeWorkflowRunner.remove(id);
-			}
-
-			if (newWorkflowData.settings) {
-				if (newWorkflowData.settings.timezone === 'DEFAULT') {
-					// Do not save the default timezone
-					delete newWorkflowData.settings.timezone;
-				}
-				if (newWorkflowData.settings.saveDataErrorExecution === 'DEFAULT') {
-					// Do not save when default got set
-					delete newWorkflowData.settings.saveDataErrorExecution;
-				}
-				if (newWorkflowData.settings.saveDataSuccessExecution === 'DEFAULT') {
-					// Do not save when default got set
-					delete newWorkflowData.settings.saveDataSuccessExecution;
-				}
-				if (newWorkflowData.settings.saveManualExecutions === 'DEFAULT') {
-					// Do not save when default got set
-					delete newWorkflowData.settings.saveManualExecutions;
-				}
-				if (parseInt(newWorkflowData.settings.executionTimeout as string, 10) === this.executionTimeout) {
-					// Do not save when default got set
-					delete newWorkflowData.settings.executionTimeout;
-				}
-			}
-
-			newWorkflowData.updatedAt = this.getCurrentDate();
-
-			await Db.collections.Workflow!.update(id, newWorkflowData);
-			await this.externalHooks.run('workflow.afterUpdate', [newWorkflowData]);
-
-			// We sadly get nothing back from "update". Neither if it updated a record
-			// nor the new value. So query now the hopefully updated entry.
-			const responseData = await Db.collections.Workflow!.findOne(id);
-
-			if (responseData === undefined) {
-				throw new ResponseHelper.ResponseError(`Workflow with id "${id}" could not be found to be updated.`, undefined, 400);
-			}
-
-			if (responseData.active === true) {
-				// When the workflow is supposed to be active add it again
-				try {
-					await this.externalHooks.run('workflow.activate', [responseData]);
-
-					await this.activeWorkflowRunner.add(id, isActive ? 'update' : 'activate');
-				} catch (error) {
-					// If workflow could not be activated set it again to inactive
-					newWorkflowData.active = false;
-					await Db.collections.Workflow!.update(id, newWorkflowData);
-
-					// Also set it in the returned data
-					responseData.active = false;
-
-					// Now return the original error for UI to display
-					throw error;
-				}
-			}
-
-			// Convert to response format in which the id is a string
-			(responseData as IWorkflowBase as IWorkflowResponse).id = responseData.id.toString();
-			return responseData as IWorkflowBase as IWorkflowResponse;
-		}));
-
-
-		// Deletes a specific workflow
-		this.app.delete(`/${this.restEndpoint}/workflows/:id`, ResponseHelper.send(async (req: express.Request, res: express.Response): Promise<boolean> => {
-			const id = req.params.id;
-
-			await this.externalHooks.run('workflow.delete', [id]);
-
-			const isActive = await this.activeWorkflowRunner.isActive(id);
-
-			if (isActive) {
-				// Before deleting a workflow deactivate it
-				await this.activeWorkflowRunner.remove(id);
-			}
-
-			await Db.collections.Workflow!.delete(id);
-			await this.externalHooks.run('workflow.afterDelete', [id]);
-
-			return true;
-		}));
-
-
-		this.app.post(`/${this.restEndpoint}/workflows/run`, ResponseHelper.send(async (req: express.Request, res: express.Response): Promise<IExecutionPushResponse> => {
-			const workflowData = req.body.workflowData;
-			const runData: IRunData | undefined = req.body.runData;
-			const startNodes: string[] | undefined = req.body.startNodes;
-			const destinationNode: string | undefined = req.body.destinationNode;
-			const executionMode = 'manual';
-			const activationMode = 'manual';
-
-			const sessionId = GenericHelpers.getSessionId(req);
-
-			// If webhooks nodes exist and are active we have to wait for till we receive a call
-			if (runData === undefined || startNodes === undefined || startNodes.length === 0 || destinationNode === undefined) {
-				const credentials = await WorkflowCredentials(workflowData.nodes);
-				const additionalData = await WorkflowExecuteAdditionalData.getBase(credentials);
-				const nodeTypes = NodeTypes();
-				const workflowInstance = new Workflow({ id: workflowData.id, name: workflowData.name, nodes: workflowData.nodes, connections: workflowData.connections, active: false, nodeTypes, staticData: undefined, settings: workflowData.settings });
-				const needsWebhook = await this.testWebhooks.needsWebhookData(workflowData, workflowInstance, additionalData, executionMode, activationMode, sessionId, destinationNode);
-				if (needsWebhook === true) {
-					return {
-						waitingForWebhook: true,
-					};
-				}
-			}
-
-			// For manual testing always set to not active
-			workflowData.active = false;
-
-			const credentials = await WorkflowCredentials(workflowData.nodes);
-
-			// Start the workflow
-			const data: IWorkflowExecutionDataProcess = {
-				credentials,
-				destinationNode,
-				executionMode,
-				runData,
-				sessionId,
-				startNodes,
-				workflowData,
-			};
-			const workflowRunner = new WorkflowRunner();
-			const executionId = await workflowRunner.run(data);
-
-			return {
-				executionId,
-			};
-		}));
-
-
-		// Returns parameter values which normally get loaded from an external API or
-		// get generated dynamically
-		this.app.get(`/${this.restEndpoint}/node-parameter-options`, ResponseHelper.send(async (req: express.Request, res: express.Response): Promise<INodePropertyOptions[]> => {
-			const nodeType = req.query.nodeType as string;
-			let credentials: INodeCredentials | undefined = undefined;
-			const currentNodeParameters = JSON.parse('' + req.query.currentNodeParameters) as INodeParameters;
-			if (req.query.credentials !== undefined) {
-				credentials = JSON.parse(req.query.credentials as string);
-			}
-			const methodName = req.query.methodName as string;
-
-			const nodeTypes = NodeTypes();
-
-			const loadDataInstance = new LoadNodeParameterOptions(nodeType, nodeTypes, JSON.parse('' + req.query.currentNodeParameters), credentials!);
-
-			const workflowData = loadDataInstance.getWorkflowData() as IWorkflowBase;
-			const workflowCredentials = await WorkflowCredentials(workflowData.nodes);
-			const additionalData = await WorkflowExecuteAdditionalData.getBase(workflowCredentials, currentNodeParameters);
-
-			return loadDataInstance.getOptions(methodName, additionalData);
-		}));
-
-
-		// Returns all the node-types
-		this.app.get(`/${this.restEndpoint}/node-types`, ResponseHelper.send(async (req: express.Request, res: express.Response): Promise<INodeTypeDescription[]> => {
-
-			const returnData: INodeTypeDescription[] = [];
-
-			const nodeTypes = NodeTypes();
-
-			const allNodes = nodeTypes.getAll();
-
-			allNodes.forEach((nodeData) => {
-				// Make a copy of the object. If we don't do this, then when
-				// The method below is called the properties are removed for good
-				// This happens because nodes are returned as reference.
-				const nodeInfo: INodeTypeDescription = { ...nodeData.description };
-				if (req.query.includeProperties !== 'true') {
-					// @ts-ignore
-					delete nodeInfo.properties;
-				}
-				returnData.push(nodeInfo);
-			});
-
-			return returnData;
-		}));
-
-
-		// Returns node information baesd on namese
-		this.app.post(`/${this.restEndpoint}/node-types`, ResponseHelper.send(async (req: express.Request, res: express.Response): Promise<INodeTypeDescription[]> => {
-			const nodeNames = _.get(req, 'body.nodeNames', []) as string[];
-			const nodeTypes = NodeTypes();
-
-			return nodeNames.map(name => {
-				try {
-					return nodeTypes.getByName(name);
-				} catch (e) {
-					return undefined;
-				}
-			}).filter(nodeData => !!nodeData).map(nodeData => nodeData!.description);
-		}));
-
-
+		this.app.use(`/${this.restEndpoint}/workflows`, workflowsController);
 
 		// ----------------------------------------
-		// Node-Types
+		// License
+		// ----------------------------------------
+		this.app.use(`/${this.restEndpoint}/license`, licenseController);
+
+		// ----------------------------------------
+		// SAML
 		// ----------------------------------------
 
+		// initialize SamlService if it is licensed, even if not enabled, to
+		// set up the initial environment
+		try {
+			await Container.get(SamlService).init();
+		} catch (error) {
+			this.logger.warn(`SAML initialization failed: ${error.message}`);
+		}
 
-		// Returns the node icon
-		this.app.get([`/${this.restEndpoint}/node-icon/:nodeType`, `/${this.restEndpoint}/node-icon/:scope/:nodeType`], async (req: express.Request, res: express.Response): Promise<void> => {
-			const nodeTypeName = `${req.params.scope ? `${req.params.scope}/` : ''}${req.params.nodeType}`;
-
-			const nodeTypes = NodeTypes();
-			const nodeType = nodeTypes.getByName(nodeTypeName);
-
-			if (nodeType === undefined) {
-				res.status(404).send('The nodeType is not known.');
-				return;
-			}
-
-			if (nodeType.description.icon === undefined) {
-				res.status(404).send('No icon found for node.');
-				return;
-			}
-
-			if (!nodeType.description.icon.startsWith('file:')) {
-				res.status(404).send('Node does not have a file icon.');
-				return;
-			}
-
-			const filepath = nodeType.description.icon.substr(5);
-
-			res.sendFile(filepath);
-		});
-
-
+		// ----------------------------------------
+		// Source Control
+		// ----------------------------------------
+		try {
+			await Container.get(SourceControlService).init();
+		} catch (error) {
+			this.logger.warn(`Source Control initialization failed: ${error.message}`);
+		}
 
 		// ----------------------------------------
 		// Active Workflows
 		// ----------------------------------------
 
-
 		// Returns the active workflow ids
-		this.app.get(`/${this.restEndpoint}/active`, ResponseHelper.send(async (req: express.Request, res: express.Response): Promise<string[]> => {
-			const activeWorkflows = await this.activeWorkflowRunner.getActiveWorkflows();
-			return activeWorkflows.map(workflow => workflow.id.toString()) as string[];
-		}));
-
+		this.app.get(
+			`/${this.restEndpoint}/active`,
+			ResponseHelper.send(async (req: WorkflowRequest.GetAllActive) => {
+				return this.activeWorkflowRunner.allActiveInStorage(req.user);
+			}),
+		);
 
 		// Returns if the workflow with the given id had any activation errors
-		this.app.get(`/${this.restEndpoint}/active/error/:id`, ResponseHelper.send(async (req: express.Request, res: express.Response): Promise<IActivationError | undefined> => {
-			const id = req.params.id;
-			return this.activeWorkflowRunner.getActivationError(id);
-		}));
+		this.app.get(
+			`/${this.restEndpoint}/active/error/:id`,
+			ResponseHelper.send(async (req: WorkflowRequest.GetActivationError) => {
+				const { id: workflowId } = req.params;
 
+				const shared = await Container.get(SharedWorkflowRepository).findOne({
+					relations: ['workflow'],
+					where: whereClause({
+						user: req.user,
+						entityType: 'workflow',
+						entityId: workflowId,
+					}),
+				});
 
+				if (!shared) {
+					this.logger.verbose('User attempted to access workflow errors without permissions', {
+						workflowId,
+						userId: req.user.id,
+					});
 
-		// ----------------------------------------
-		// Credentials
-		// ----------------------------------------
-
-
-		// Deletes a specific credential
-		this.app.delete(`/${this.restEndpoint}/credentials/:id`, ResponseHelper.send(async (req: express.Request, res: express.Response): Promise<boolean> => {
-			const id = req.params.id;
-
-			await this.externalHooks.run('credentials.delete', [id]);
-
-			await Db.collections.Credentials!.delete({ id });
-
-			return true;
-		}));
-
-		// Creates new credentials
-		this.app.post(`/${this.restEndpoint}/credentials`, ResponseHelper.send(async (req: express.Request, res: express.Response): Promise<ICredentialsResponse> => {
-			const incomingData = req.body;
-
-			if (!incomingData.name || incomingData.name.length < 3) {
-				throw new ResponseHelper.ResponseError(`Credentials name must be at least 3 characters long.`, undefined, 400);
-			}
-
-			// Add the added date for node access permissions
-			for (const nodeAccess of incomingData.nodesAccess) {
-				nodeAccess.date = this.getCurrentDate();
-			}
-
-			const encryptionKey = await UserSettings.getEncryptionKey();
-			if (encryptionKey === undefined) {
-				throw new Error('No encryption key got found to encrypt the credentials!');
-			}
-
-			if (incomingData.name === '') {
-				throw new Error('Credentials have to have a name set!');
-			}
-
-			// Check if credentials with the same name and type exist already
-			const findQuery = {
-				where: {
-					name: incomingData.name,
-					type: incomingData.type,
-				},
-			} as FindOneOptions;
-
-			const checkResult = await Db.collections.Credentials!.findOne(findQuery);
-			if (checkResult !== undefined) {
-				throw new ResponseHelper.ResponseError(`Credentials with the same type and name exist already.`, undefined, 400);
-			}
-
-			// Encrypt the data
-			const credentials = new Credentials(incomingData.name, incomingData.type, incomingData.nodesAccess);
-			credentials.setData(incomingData.data, encryptionKey);
-			const newCredentialsData = credentials.getDataToSave() as ICredentialsDb;
-
-			await this.externalHooks.run('credentials.create', [newCredentialsData]);
-
-			// Add special database related data
-			newCredentialsData.createdAt = this.getCurrentDate();
-			newCredentialsData.updatedAt = this.getCurrentDate();
-
-			// TODO: also add user automatically depending on who is logged in, if anybody is logged in
-
-			// Save the credentials in DB
-			const result = await Db.collections.Credentials!.save(newCredentialsData);
-			result.data = incomingData.data;
-
-			// Convert to response format in which the id is a string
-			(result as unknown as ICredentialsResponse).id = result.id.toString();
-			return result as unknown as ICredentialsResponse;
-		}));
-
-
-		// Updates existing credentials
-		this.app.patch(`/${this.restEndpoint}/credentials/:id`, ResponseHelper.send(async (req: express.Request, res: express.Response): Promise<ICredentialsResponse> => {
-			const incomingData = req.body;
-
-			const id = req.params.id;
-
-			if (incomingData.name === '') {
-				throw new Error('Credentials have to have a name set!');
-			}
-
-			// Add the date for newly added node access permissions
-			for (const nodeAccess of incomingData.nodesAccess) {
-				if (!nodeAccess.date) {
-					nodeAccess.date = this.getCurrentDate();
-				}
-			}
-
-			// Check if credentials with the same name and type exist already
-			const findQuery = {
-				where: {
-					id: Not(id),
-					name: incomingData.name,
-					type: incomingData.type,
-				},
-			} as FindOneOptions;
-
-			const checkResult = await Db.collections.Credentials!.findOne(findQuery);
-			if (checkResult !== undefined) {
-				throw new ResponseHelper.ResponseError(`Credentials with the same type and name exist already.`, undefined, 400);
-			}
-
-			const encryptionKey = await UserSettings.getEncryptionKey();
-			if (encryptionKey === undefined) {
-				throw new Error('No encryption key got found to encrypt the credentials!');
-			}
-
-			// Load the currently saved credentials to be able to persist some of the data if
-			const result = await Db.collections.Credentials!.findOne(id);
-			if (result === undefined) {
-				throw new ResponseHelper.ResponseError(`Credentials with the id "${id}" do not exist.`, undefined, 400);
-			}
-
-			const currentlySavedCredentials = new Credentials(result.name, result.type, result.nodesAccess, result.data);
-			const decryptedData = currentlySavedCredentials.getData(encryptionKey!);
-
-			// Do not overwrite the oauth data else data like the access or refresh token would get lost
-			// everytime anybody changes anything on the credentials even if it is just the name.
-			if (decryptedData.oauthTokenData) {
-				incomingData.data.oauthTokenData = decryptedData.oauthTokenData;
-			}
-
-			// Encrypt the data
-			const credentials = new Credentials(incomingData.name, incomingData.type, incomingData.nodesAccess);
-			credentials.setData(incomingData.data, encryptionKey);
-			const newCredentialsData = credentials.getDataToSave() as unknown as ICredentialsDb;
-
-			// Add special database related data
-			newCredentialsData.updatedAt = this.getCurrentDate();
-
-			await this.externalHooks.run('credentials.update', [newCredentialsData]);
-
-			// Update the credentials in DB
-			await Db.collections.Credentials!.update(id, newCredentialsData);
-
-			// We sadly get nothing back from "update". Neither if it updated a record
-			// nor the new value. So query now the hopefully updated entry.
-			const responseData = await Db.collections.Credentials!.findOne(id);
-
-			if (responseData === undefined) {
-				throw new ResponseHelper.ResponseError(`Credentials with id "${id}" could not be found to be updated.`, undefined, 400);
-			}
-
-			// Remove the encrypted data as it is not needed in the frontend
-			responseData.data = '';
-
-			// Convert to response format in which the id is a string
-			(responseData as unknown as ICredentialsResponse).id = responseData.id.toString();
-			return responseData as unknown as ICredentialsResponse;
-		}));
-
-
-		// Returns specific credentials
-		this.app.get(`/${this.restEndpoint}/credentials/:id`, ResponseHelper.send(async (req: express.Request, res: express.Response): Promise<ICredentialsDecryptedResponse | ICredentialsResponse | undefined> => {
-			const findQuery = {} as FindManyOptions;
-
-			// Make sure the variable has an expected value
-			const includeData = ['true', true].includes(req.query.includeData as string);
-
-			if (includeData !== true) {
-				// Return only the fields we need
-				findQuery.select = ['id', 'name', 'type', 'nodesAccess', 'createdAt', 'updatedAt'];
-			}
-
-			const result = await Db.collections.Credentials!.findOne(req.params.id);
-
-			if (result === undefined) {
-				return result;
-			}
-
-			let encryptionKey = undefined;
-			if (includeData === true) {
-				encryptionKey = await UserSettings.getEncryptionKey();
-				if (encryptionKey === undefined) {
-					throw new Error('No encryption key got found to decrypt the credentials!');
+					throw new BadRequestError(`Workflow with ID "${workflowId}" could not be found.`);
 				}
 
-				const credentials = new Credentials(result.name, result.type, result.nodesAccess, result.data);
-				(result as ICredentialsDecryptedDb).data = credentials.getData(encryptionKey!);
-			}
-
-			(result as ICredentialsDecryptedResponse).id = result.id.toString();
-
-			return result as ICredentialsDecryptedResponse;
-		}));
-
-
-		// Returns all the saved credentials
-		this.app.get(`/${this.restEndpoint}/credentials`, ResponseHelper.send(async (req: express.Request, res: express.Response): Promise<ICredentialsResponse[]> => {
-			const findQuery = {} as FindManyOptions;
-			if (req.query.filter) {
-				findQuery.where = JSON.parse(req.query.filter as string);
-				if ((findQuery.where! as IDataObject).id !== undefined) {
-					// No idea if multiple where parameters make db search
-					// slower but to be sure that that is not the case we
-					// remove all unnecessary fields in case the id is defined.
-					findQuery.where = { id: (findQuery.where! as IDataObject).id };
-				}
-			}
-
-			findQuery.select = ['id', 'name', 'type', 'nodesAccess', 'createdAt', 'updatedAt'];
-
-			const results = await Db.collections.Credentials!.find(findQuery) as unknown as ICredentialsResponse[];
-
-			let encryptionKey = undefined;
-
-			const includeData = ['true', true].includes(req.query.includeData as string);
-			if (includeData === true) {
-				encryptionKey = await UserSettings.getEncryptionKey();
-				if (encryptionKey === undefined) {
-					throw new Error('No encryption key got found to decrypt the credentials!');
-				}
-			}
-
-			let result;
-			for (result of results) {
-				(result as ICredentialsDecryptedResponse).id = result.id.toString();
-			}
-
-			return results;
-		}));
-
-
+				return this.activeWorkflowRunner.getActivationError(workflowId);
+			}),
+		);
 
 		// ----------------------------------------
-		// Credential-Types
+		// curl-converter
 		// ----------------------------------------
+		this.app.post(
+			`/${this.restEndpoint}/curl-to-json`,
+			ResponseHelper.send(
+				async (
+					req: CurlHelper.ToJson,
+					res: express.Response,
+				): Promise<{ [key: string]: string }> => {
+					const curlCommand = req.body.curlCommand ?? '';
 
-
-		// Returns all the credential types which are defined in the loaded n8n-modules
-		this.app.get(`/${this.restEndpoint}/credential-types`, ResponseHelper.send(async (req: express.Request, res: express.Response): Promise<ICredentialType[]> => {
-
-			const returnData: ICredentialType[] = [];
-
-			const credentialTypes = CredentialTypes();
-
-			credentialTypes.getAll().forEach((credentialData) => {
-				returnData.push(credentialData);
-			});
-
-			return returnData;
-		}));
-
-		// ----------------------------------------
-		// OAuth1-Credential/Auth
-		// ----------------------------------------
-
-		// Authorize OAuth Data
-		this.app.get(`/${this.restEndpoint}/oauth1-credential/auth`, ResponseHelper.send(async (req: express.Request, res: express.Response): Promise<string> => {
-			if (req.query.id === undefined) {
-				res.status(500).send('Required credential id is missing!');
-				return '';
-			}
-
-			const result = await Db.collections.Credentials!.findOne(req.query.id as string);
-			if (result === undefined) {
-				res.status(404).send('The credential is not known.');
-				return '';
-			}
-
-			let encryptionKey = undefined;
-			encryptionKey = await UserSettings.getEncryptionKey();
-			if (encryptionKey === undefined) {
-				res.status(500).send('No encryption key got found to decrypt the credentials!');
-				return '';
-			}
-
-			// Decrypt the currently saved credentials
-			const workflowCredentials: IWorkflowCredentials = {
-				[result.type as string]: {
-					[result.name as string]: result as ICredentialsEncrypted,
+					try {
+						const parameters = toHttpNodeParameters(curlCommand);
+						return ResponseHelper.flattenObject(parameters, 'parameters');
+					} catch (e) {
+						throw new BadRequestError('Invalid cURL command');
+					}
 				},
-			};
-			const mode: WorkflowExecuteMode = 'internal';
-			const credentialsHelper = new CredentialsHelper(workflowCredentials, encryptionKey);
-			const decryptedDataOriginal = credentialsHelper.getDecrypted(result.name, result.type, mode, true);
-			const oauthCredentials = credentialsHelper.applyDefaultsAndOverwrites(decryptedDataOriginal, result.type, mode);
-
-			const signatureMethod = _.get(oauthCredentials, 'signatureMethod') as string;
-
-			const oAuthOptions: clientOAuth1.Options = {
-				consumer: {
-					key: _.get(oauthCredentials, 'consumerKey') as string,
-					secret: _.get(oauthCredentials, 'consumerSecret') as string,
-				},
-				signature_method: signatureMethod,
-				hash_function(base, key) {
-					const algorithm = (signatureMethod === 'HMAC-SHA1') ? 'sha1' : 'sha256';
-					return createHmac(algorithm, key)
-						.update(base)
-						.digest('base64');
-				},
-			};
-
-			const oauthRequestData = {
-				oauth_callback: `${WebhookHelpers.getWebhookBaseUrl()}${this.restEndpoint}/oauth1-credential/callback?cid=${req.query.id}`,
-			};
-
-			await this.externalHooks.run('oauth1.authenticate', [oAuthOptions, oauthRequestData]);
-
-			const oauth = new clientOAuth1(oAuthOptions);
-
-			const options: RequestOptions = {
-				method: 'POST',
-				url: (_.get(oauthCredentials, 'requestTokenUrl') as string),
-				data: oauthRequestData,
-			};
-
-			const data = oauth.toHeader(oauth.authorize(options as RequestOptions));
-
-			//@ts-ignore
-			options.headers = data;
-
-			const response = await requestPromise(options);
-
-			// Response comes as x-www-form-urlencoded string so convert it to JSON
-
-			const responseJson = querystring.parse(response);
-
-			const returnUri = `${_.get(oauthCredentials, 'authUrl')}?oauth_token=${responseJson.oauth_token}`;
-
-			// Encrypt the data
-			const credentials = new Credentials(result.name, result.type, result.nodesAccess);
-
-			credentials.setData(decryptedDataOriginal, encryptionKey);
-			const newCredentialsData = credentials.getDataToSave() as unknown as ICredentialsDb;
-
-			// Add special database related data
-			newCredentialsData.updatedAt = this.getCurrentDate();
-
-			// Update the credentials in DB
-			await Db.collections.Credentials!.update(req.query.id as string, newCredentialsData);
-
-			return returnUri;
-		}));
-
-		// Verify and store app code. Generate access tokens and store for respective credential.
-		this.app.get(`/${this.restEndpoint}/oauth1-credential/callback`, async (req: express.Request, res: express.Response) => {
-			const { oauth_verifier, oauth_token, cid } = req.query;
-
-			if (oauth_verifier === undefined || oauth_token === undefined) {
-				const errorResponse = new ResponseHelper.ResponseError('Insufficient parameters for OAuth1 callback. Received following query parameters: ' + JSON.stringify(req.query), undefined, 503);
-				return ResponseHelper.sendErrorResponse(res, errorResponse);
-			}
-
-			const result = await Db.collections.Credentials!.findOne(cid as any); // tslint:disable-line:no-any
-			if (result === undefined) {
-				const errorResponse = new ResponseHelper.ResponseError('The credential is not known.', undefined, 404);
-				return ResponseHelper.sendErrorResponse(res, errorResponse);
-			}
-
-			let encryptionKey = undefined;
-			encryptionKey = await UserSettings.getEncryptionKey();
-			if (encryptionKey === undefined) {
-				const errorResponse = new ResponseHelper.ResponseError('No encryption key got found to decrypt the credentials!', undefined, 503);
-				return ResponseHelper.sendErrorResponse(res, errorResponse);
-			}
-
-			// Decrypt the currently saved credentials
-			const workflowCredentials: IWorkflowCredentials = {
-				[result.type as string]: {
-					[result.name as string]: result as ICredentialsEncrypted,
-				},
-			};
-			const mode: WorkflowExecuteMode = 'internal';
-			const credentialsHelper = new CredentialsHelper(workflowCredentials, encryptionKey);
-			const decryptedDataOriginal = credentialsHelper.getDecrypted(result.name, result.type, mode, true);
-			const oauthCredentials = credentialsHelper.applyDefaultsAndOverwrites(decryptedDataOriginal, result.type, mode);
-
-			const options: OptionsWithUrl = {
-				method: 'POST',
-				url: _.get(oauthCredentials, 'accessTokenUrl') as string,
-				qs: {
-					oauth_token,
-					oauth_verifier,
-				},
-			};
-
-			let oauthToken;
-
-			try {
-				oauthToken = await requestPromise(options);
-			} catch (error) {
-				const errorResponse = new ResponseHelper.ResponseError('Unable to get access tokens!', undefined, 404);
-				return ResponseHelper.sendErrorResponse(res, errorResponse);
-			}
-
-			// Response comes as x-www-form-urlencoded string so convert it to JSON
-
-			const oauthTokenJson = querystring.parse(oauthToken);
-
-			decryptedDataOriginal.oauthTokenData = oauthTokenJson;
-
-			const credentials = new Credentials(result.name, result.type, result.nodesAccess);
-			credentials.setData(decryptedDataOriginal, encryptionKey);
-			const newCredentialsData = credentials.getDataToSave() as unknown as ICredentialsDb;
-			// Add special database related data
-			newCredentialsData.updatedAt = this.getCurrentDate();
-			// Save the credentials in DB
-			await Db.collections.Credentials!.update(cid as any, newCredentialsData); // tslint:disable-line:no-any
-
-			res.sendFile(pathResolve(__dirname, '../../templates/oauth-callback.html'));
-		});
-
-
-		// ----------------------------------------
-		// OAuth2-Credential/Auth
-		// ----------------------------------------
-
-
-		// Authorize OAuth Data
-		this.app.get(`/${this.restEndpoint}/oauth2-credential/auth`, ResponseHelper.send(async (req: express.Request, res: express.Response): Promise<string> => {
-			if (req.query.id === undefined) {
-				res.status(500).send('Required credential id is missing.');
-				return '';
-			}
-
-			const result = await Db.collections.Credentials!.findOne(req.query.id as string);
-			if (result === undefined) {
-				res.status(404).send('The credential is not known.');
-				return '';
-			}
-
-			let encryptionKey = undefined;
-			encryptionKey = await UserSettings.getEncryptionKey();
-			if (encryptionKey === undefined) {
-				res.status(500).send('No encryption key got found to decrypt the credentials!');
-				return '';
-			}
-
-			// Decrypt the currently saved credentials
-			const workflowCredentials: IWorkflowCredentials = {
-				[result.type as string]: {
-					[result.name as string]: result as ICredentialsEncrypted,
-				},
-			};
-			const mode: WorkflowExecuteMode = 'internal';
-			const credentialsHelper = new CredentialsHelper(workflowCredentials, encryptionKey);
-			const decryptedDataOriginal = credentialsHelper.getDecrypted(result.name, result.type, mode, true);
-			const oauthCredentials = credentialsHelper.applyDefaultsAndOverwrites(decryptedDataOriginal, result.type, mode);
-
-			const token = new csrf();
-			// Generate a CSRF prevention token and send it as a OAuth2 state stringma/ERR
-			const csrfSecret = token.secretSync();
-			const state = {
-				token: token.create(csrfSecret),
-				cid: req.query.id,
-			};
-			const stateEncodedStr = Buffer.from(JSON.stringify(state)).toString('base64') as string;
-
-			const oAuthOptions: clientOAuth2.Options = {
-				clientId: _.get(oauthCredentials, 'clientId') as string,
-				clientSecret: _.get(oauthCredentials, 'clientSecret', '') as string,
-				accessTokenUri: _.get(oauthCredentials, 'accessTokenUrl', '') as string,
-				authorizationUri: _.get(oauthCredentials, 'authUrl', '') as string,
-				redirectUri: `${WebhookHelpers.getWebhookBaseUrl()}${this.restEndpoint}/oauth2-credential/callback`,
-				scopes: _.split(_.get(oauthCredentials, 'scope', 'openid,') as string, ','),
-				state: stateEncodedStr,
-			};
-
-			await this.externalHooks.run('oauth2.authenticate', [oAuthOptions]);
-
-			const oAuthObj = new clientOAuth2(oAuthOptions);
-
-			// Encrypt the data
-			const credentials = new Credentials(result.name, result.type, result.nodesAccess);
-			decryptedDataOriginal.csrfSecret = csrfSecret;
-
-			credentials.setData(decryptedDataOriginal, encryptionKey);
-			const newCredentialsData = credentials.getDataToSave() as unknown as ICredentialsDb;
-
-			// Add special database related data
-			newCredentialsData.updatedAt = this.getCurrentDate();
-
-			// Update the credentials in DB
-			await Db.collections.Credentials!.update(req.query.id as string, newCredentialsData);
-
-			const authQueryParameters = _.get(oauthCredentials, 'authQueryParameters', '') as string;
-			let returnUri = oAuthObj.code.getUri();
-
-			// if scope uses comma, change it as the library always return then with spaces
-			if ((_.get(oauthCredentials, 'scope') as string).includes(',')) {
-				const data = querystring.parse(returnUri.split('?')[1] as string);
-				data.scope = _.get(oauthCredentials, 'scope') as string;
-				returnUri = `${_.get(oauthCredentials, 'authUrl', '')}?${querystring.stringify(data)}`;
-			}
-
-			if (authQueryParameters) {
-				returnUri += '&' + authQueryParameters;
-			}
-
-			return returnUri;
-		}));
-
-		// ----------------------------------------
-		// OAuth2-Credential/Callback
-		// ----------------------------------------
-
-		// Verify and store app code. Generate access tokens and store for respective credential.
-		this.app.get(`/${this.restEndpoint}/oauth2-credential/callback`, async (req: express.Request, res: express.Response) => {
-
-			// realmId it's currently just use for the quickbook OAuth2 flow
-			const { code, state: stateEncoded } = req.query;
-
-			if (code === undefined || stateEncoded === undefined) {
-				const errorResponse = new ResponseHelper.ResponseError('Insufficient parameters for OAuth2 callback. Received following query parameters: ' + JSON.stringify(req.query), undefined, 503);
-				return ResponseHelper.sendErrorResponse(res, errorResponse);
-			}
-
-			let state;
-			try {
-				state = JSON.parse(Buffer.from(stateEncoded as string, 'base64').toString());
-			} catch (error) {
-				const errorResponse = new ResponseHelper.ResponseError('Invalid state format returned', undefined, 503);
-				return ResponseHelper.sendErrorResponse(res, errorResponse);
-			}
-
-			const result = await Db.collections.Credentials!.findOne(state.cid);
-			if (result === undefined) {
-				const errorResponse = new ResponseHelper.ResponseError('The credential is not known.', undefined, 404);
-				return ResponseHelper.sendErrorResponse(res, errorResponse);
-			}
-
-			let encryptionKey = undefined;
-			encryptionKey = await UserSettings.getEncryptionKey();
-			if (encryptionKey === undefined) {
-				const errorResponse = new ResponseHelper.ResponseError('No encryption key got found to decrypt the credentials!', undefined, 503);
-				return ResponseHelper.sendErrorResponse(res, errorResponse);
-			}
-
-			// Decrypt the currently saved credentials
-			const workflowCredentials: IWorkflowCredentials = {
-				[result.type as string]: {
-					[result.name as string]: result as ICredentialsEncrypted,
-				},
-			};
-			const mode: WorkflowExecuteMode = 'internal';
-			const credentialsHelper = new CredentialsHelper(workflowCredentials, encryptionKey);
-			const decryptedDataOriginal = credentialsHelper.getDecrypted(result.name, result.type, mode, true);
-			const oauthCredentials = credentialsHelper.applyDefaultsAndOverwrites(decryptedDataOriginal, result.type, mode);
-
-			const token = new csrf();
-			if (decryptedDataOriginal.csrfSecret === undefined || !token.verify(decryptedDataOriginal.csrfSecret as string, state.token)) {
-				const errorResponse = new ResponseHelper.ResponseError('The OAuth2 callback state is invalid!', undefined, 404);
-				return ResponseHelper.sendErrorResponse(res, errorResponse);
-			}
-
-			let options = {};
-
-			const oAuth2Parameters = {
-				clientId: _.get(oauthCredentials, 'clientId') as string,
-				clientSecret: _.get(oauthCredentials, 'clientSecret', '') as string | undefined,
-				accessTokenUri: _.get(oauthCredentials, 'accessTokenUrl', '') as string,
-				authorizationUri: _.get(oauthCredentials, 'authUrl', '') as string,
-				redirectUri: `${WebhookHelpers.getWebhookBaseUrl()}${this.restEndpoint}/oauth2-credential/callback`,
-				scopes: _.split(_.get(oauthCredentials, 'scope', 'openid,') as string, ','),
-			};
-
-			if (_.get(oauthCredentials, 'authentication', 'header') as string === 'body') {
-				options = {
-					body: {
-						client_id: _.get(oauthCredentials, 'clientId') as string,
-						client_secret: _.get(oauthCredentials, 'clientSecret', '') as string,
-					},
-				};
-				delete oAuth2Parameters.clientSecret;
-			}
-
-			await this.externalHooks.run('oauth2.callback', [oAuth2Parameters]);
-
-			const oAuthObj = new clientOAuth2(oAuth2Parameters);
-
-			const queryParameters = req.originalUrl.split('?').splice(1, 1).join('');
-
-			const oauthToken = await oAuthObj.code.getToken(`${oAuth2Parameters.redirectUri}?${queryParameters}`, options);
-
-			if (Object.keys(req.query).length > 2) {
-				_.set(oauthToken.data, 'callbackQueryString', _.omit(req.query, 'state', 'code'));
-			}
-
-			if (oauthToken === undefined) {
-				const errorResponse = new ResponseHelper.ResponseError('Unable to get access tokens!', undefined, 404);
-				return ResponseHelper.sendErrorResponse(res, errorResponse);
-			}
-
-			if (decryptedDataOriginal.oauthTokenData) {
-				// Only overwrite supplied data as some providers do for example just return the
-				// refresh_token on the very first request and not on subsequent ones.
-				Object.assign(decryptedDataOriginal.oauthTokenData, oauthToken.data);
-			} else {
-				// No data exists so simply set
-				decryptedDataOriginal.oauthTokenData = oauthToken.data;
-			}
-
-			_.unset(decryptedDataOriginal, 'csrfSecret');
-
-			const credentials = new Credentials(result.name, result.type, result.nodesAccess);
-			credentials.setData(decryptedDataOriginal, encryptionKey);
-			const newCredentialsData = credentials.getDataToSave() as unknown as ICredentialsDb;
-			// Add special database related data
-			newCredentialsData.updatedAt = this.getCurrentDate();
-			// Save the credentials in DB
-			await Db.collections.Credentials!.update(state.cid, newCredentialsData);
-
-			res.sendFile(pathResolve(__dirname, '../../templates/oauth-callback.html'));
-		});
-
+			),
+		);
 
 		// ----------------------------------------
 		// Executions
 		// ----------------------------------------
 
-
-		// Returns all finished executions
-		this.app.get(`/${this.restEndpoint}/executions`, ResponseHelper.send(async (req: express.Request, res: express.Response): Promise<IExecutionsListResponse> => {
-			let filter: any = {}; // tslint:disable-line:no-any
-
-			if (req.query.filter) {
-				filter = JSON.parse(req.query.filter as string);
-			}
-
-			let limit = 20;
-			if (req.query.limit) {
-				limit = parseInt(req.query.limit as string, 10);
-			}
-
-			const executingWorkflowIds: string[] = [];
-
-			if (config.get('executions.mode') === 'queue') {
-				const currentJobs = await Queue.getInstance().getJobs(['active', 'waiting']);
-				executingWorkflowIds.push(...currentJobs.map(job => job.data.executionId) as string[]);
-			}
-			// We may have manual executions even with queue so we must account for these.
-			executingWorkflowIds.push(...this.activeExecutionsInstance.getActiveExecutions().map(execution => execution.id.toString()) as string[]);
-
-			const countFilter = JSON.parse(JSON.stringify(filter));
-			countFilter.select = ['id'];
-			countFilter.where = {id: Not(In(executingWorkflowIds))};
-
-			const resultsQuery = await Db.collections.Execution!
-				.createQueryBuilder("execution")
-				.select([
-					'execution.id',
-					'execution.finished',
-					'execution.mode',
-					'execution.retryOf',
-					'execution.retrySuccessId',
-					'execution.startedAt',
-					'execution.stoppedAt',
-					'execution.workflowData',
-				])
-				.orderBy('execution.id', 'DESC')
-				.take(limit);
-
-			Object.keys(filter).forEach((filterField) => {
-				resultsQuery.andWhere(`execution.${filterField} = :${filterField}`, {[filterField]: filter[filterField]});
-			});
-			if (req.query.lastId) {
-				resultsQuery.andWhere(`execution.id < :lastId`, {lastId: req.query.lastId});
-			}
-			if (req.query.firstId) {
-				resultsQuery.andWhere(`execution.id > :firstId`, {firstId: req.query.firstId});
-			}
-			if (executingWorkflowIds.length > 0) {
-				resultsQuery.andWhere(`execution.id NOT IN (:...ids)`, {ids: executingWorkflowIds});
-			}
-
-			const resultsPromise = resultsQuery.getMany();
-
-			const countPromise = Db.collections.Execution!.count(countFilter);
-
-			const results: IExecutionFlattedDb[] = await resultsPromise;
-			const count = await countPromise;
-
-			const returnResults: IExecutionsSummary[] = [];
-
-			for (const result of results) {
-				returnResults.push({
-					id: result.id!.toString(),
-					finished: result.finished,
-					mode: result.mode,
-					retryOf: result.retryOf ? result.retryOf.toString() : undefined,
-					retrySuccessId: result.retrySuccessId ? result.retrySuccessId.toString() : undefined,
-					startedAt: result.startedAt,
-					stoppedAt: result.stoppedAt,
-					workflowId: result.workflowData!.id ? result.workflowData!.id!.toString() : '',
-					workflowName: result.workflowData!.name,
-				});
-			}
-
-			return {
-				count,
-				results: returnResults,
-			};
-		}));
-
-
-		// Returns a specific execution
-		this.app.get(`/${this.restEndpoint}/executions/:id`, ResponseHelper.send(async (req: express.Request, res: express.Response): Promise<IExecutionResponse | IExecutionFlattedResponse | undefined> => {
-			const result = await Db.collections.Execution!.findOne(req.params.id);
-
-			if (result === undefined) {
-				return undefined;
-			}
-
-			if (req.query.unflattedResponse === 'true') {
-				const fullExecutionData = ResponseHelper.unflattenExecutionData(result);
-				return fullExecutionData as IExecutionResponse;
-			} else {
-				// Convert to response format in which the id is a string
-				(result as IExecutionFlatted as IExecutionFlattedResponse).id = result.id.toString();
-				return result as IExecutionFlatted as IExecutionFlattedResponse;
-			}
-		}));
-
-
-		// Retries a failed execution
-		this.app.post(`/${this.restEndpoint}/executions/:id/retry`, ResponseHelper.send(async (req: express.Request, res: express.Response): Promise<boolean> => {
-			// Get the data to execute
-			const fullExecutionDataFlatted = await Db.collections.Execution!.findOne(req.params.id);
-
-			if (fullExecutionDataFlatted === undefined) {
-				throw new ResponseHelper.ResponseError(`The execution with the id "${req.params.id}" does not exist.`, 404, 404);
-			}
-
-			const fullExecutionData = ResponseHelper.unflattenExecutionData(fullExecutionDataFlatted);
-
-			if (fullExecutionData.finished === true) {
-				throw new Error('The execution did succeed and can so not be retried.');
-			}
-
-			const executionMode = 'retry';
-
-			const credentials = await WorkflowCredentials(fullExecutionData.workflowData.nodes);
-
-			fullExecutionData.workflowData.active = false;
-
-			// Start the workflow
-			const data: IWorkflowExecutionDataProcess = {
-				credentials,
-				executionMode,
-				executionData: fullExecutionData.data,
-				retryOf: req.params.id,
-				workflowData: fullExecutionData.workflowData,
-			};
-
-			const lastNodeExecuted = data!.executionData!.resultData.lastNodeExecuted as string | undefined;
-
-			if (lastNodeExecuted) {
-				// Remove the old error and the data of the last run of the node that it can be replaced
-				delete data!.executionData!.resultData.error;
-				const length = data!.executionData!.resultData.runData[lastNodeExecuted].length;
-				if (length > 0 && data!.executionData!.resultData.runData[lastNodeExecuted][length - 1].error !== undefined) {
-					// Remove results only if it is an error.
-					// If we are retrying due to a crash, the information is simply success info from last node
-					data!.executionData!.resultData.runData[lastNodeExecuted].pop();
-					// Stack will determine what to run next
-				}
-			}
-
-			if (req.body.loadWorkflow === true) {
-				// Loads the currently saved workflow to execute instead of the
-				// one saved at the time of the execution.
-				const workflowId = fullExecutionData.workflowData.id;
-				const workflowData = await Db.collections.Workflow!.findOne(workflowId) as IWorkflowBase;
-
-				if (workflowData === undefined) {
-					throw new Error(`The workflow with the ID "${workflowId}" could not be found and so the data not be loaded for the retry.`);
-				}
-
-				data.workflowData = workflowData;
-				const nodeTypes = NodeTypes();
-				const workflowInstance = new Workflow({ id: workflowData.id as string, name: workflowData.name, nodes: workflowData.nodes, connections: workflowData.connections, active: false, nodeTypes, staticData: undefined, settings: workflowData.settings });
-
-				// Replace all of the nodes in the execution stack with the ones of the new workflow
-				for (const stack of data!.executionData!.executionData!.nodeExecutionStack) {
-					// Find the data of the last executed node in the new workflow
-					const node = workflowInstance.getNode(stack.node.name);
-					if (node === null) {
-						throw new Error(`Could not find the node "${stack.node.name}" in workflow. It probably got deleted or renamed. Without it the workflow can sadly not be retried.`);
-					}
-
-					// Replace the node data in the stack that it really uses the current data
-					stack.node = node;
-				}
-			}
-
-			const workflowRunner = new WorkflowRunner();
-			const executionId = await workflowRunner.run(data);
-
-			const executionData = await this.activeExecutionsInstance.getPostExecutePromise(executionId);
-
-			if (executionData === undefined) {
-				throw new Error('The retry did not start for an unknown reason.');
-			}
-
-			return !!executionData.finished;
-		}));
-
-
-		// Delete Executions
-		// INFORMATION: We use POST instead of DELETE to not run into any issues
-		// with the query data getting to long
-		this.app.post(`/${this.restEndpoint}/executions/delete`, ResponseHelper.send(async (req: express.Request, res: express.Response): Promise<void> => {
-			const deleteData = req.body as IExecutionDeleteFilter;
-
-			if (deleteData.deleteBefore !== undefined) {
-				const filters = {
-					startedAt: LessThanOrEqual(deleteData.deleteBefore),
-				};
-				if (deleteData.filters !== undefined) {
-					Object.assign(filters, deleteData.filters);
-				}
-
-				await Db.collections.Execution!.delete(filters);
-			} else if (deleteData.ids !== undefined) {
-				// Deletes all executions with the given ids
-				await Db.collections.Execution!.delete(deleteData.ids);
-			} else {
-				throw new Error('Required body-data "ids" or "deleteBefore" is missing!');
-			}
-		}));
-
+		this.app.use(`/${this.restEndpoint}/executions`, executionsController);
 
 		// ----------------------------------------
 		// Executing Workflows
 		// ----------------------------------------
 
-
 		// Returns all the currently working executions
-		this.app.get(`/${this.restEndpoint}/executions-current`, ResponseHelper.send(async (req: express.Request, res: express.Response): Promise<IExecutionsSummary[]> => {
-			if (config.get('executions.mode') === 'queue') {
-				const currentJobs = await Queue.getInstance().getJobs(['active', 'waiting']);
+		this.app.get(
+			`/${this.restEndpoint}/executions-current`,
+			ResponseHelper.send(
+				async (req: ExecutionRequest.GetAllCurrent): Promise<IExecutionsSummary[]> => {
+					if (config.getEnv('executions.mode') === 'queue') {
+						const queue = Container.get(Queue);
+						const currentJobs = await queue.getJobs(['active', 'waiting']);
 
-				const currentlyRunningQueueIds = currentJobs.map(job => job.data.executionId);
+						const currentlyRunningQueueIds = currentJobs.map((job) => job.data.executionId);
 
-				const currentlyRunningManualExecutions = this.activeExecutionsInstance.getActiveExecutions();
-				const manualExecutionIds = currentlyRunningManualExecutions.map(execution => execution.id);
+						const currentlyRunningManualExecutions =
+							this.activeExecutionsInstance.getActiveExecutions();
+						const manualExecutionIds = currentlyRunningManualExecutions.map(
+							(execution) => execution.id,
+						);
 
-				const currentlyRunningExecutionIds = currentlyRunningQueueIds.concat(manualExecutionIds);
+						const currentlyRunningExecutionIds =
+							currentlyRunningQueueIds.concat(manualExecutionIds);
 
-				if (currentlyRunningExecutionIds.length === 0) {
-					return [];
-				}
+						if (!currentlyRunningExecutionIds.length) return [];
 
-				const resultsQuery = await Db.collections.Execution!
-					.createQueryBuilder("execution")
-					.select([
-						'execution.id',
-						'execution.workflowId',
-						'execution.mode',
-						'execution.retryOf',
-						'execution.startedAt',
-					])
-					.orderBy('execution.id', 'DESC')
-					.andWhere(`execution.id IN (:...ids)`, {ids: currentlyRunningExecutionIds});
+						const findOptions: FindManyOptions<ExecutionEntity> & {
+							where: FindOptionsWhere<ExecutionEntity>;
+						} = {
+							select: ['id', 'workflowId', 'mode', 'retryOf', 'startedAt', 'stoppedAt', 'status'],
+							order: { id: 'DESC' },
+							where: {
+								id: In(currentlyRunningExecutionIds),
+								status: Not(In(['finished', 'stopped', 'failed', 'crashed'] as ExecutionStatus[])),
+							},
+						};
 
-				if (req.query.filter) {
-					const filter = JSON.parse(req.query.filter as string);
-					if (filter.workflowId !== undefined) {
-						resultsQuery.andWhere('execution.workflowId = :workflowId', {workflowId: filter.workflowId});
+						const sharedWorkflowIds = await getSharedWorkflowIds(req.user);
+
+						if (!sharedWorkflowIds.length) return [];
+
+						if (req.query.filter) {
+							const { workflowId, status, finished } = jsonParse<any>(req.query.filter);
+							if (workflowId && sharedWorkflowIds.includes(workflowId)) {
+								Object.assign(findOptions.where, { workflowId });
+							} else {
+								Object.assign(findOptions.where, { workflowId: In(sharedWorkflowIds) });
+							}
+							if (status) {
+								Object.assign(findOptions.where, { status: In(status) });
+							}
+							if (finished) {
+								Object.assign(findOptions.where, { finished });
+							}
+						} else {
+							Object.assign(findOptions.where, { workflowId: In(sharedWorkflowIds) });
+						}
+
+						const executions =
+							await Container.get(ExecutionRepository).findMultipleExecutions(findOptions);
+
+						if (!executions.length) return [];
+
+						return executions.map((execution) => {
+							if (!execution.status) {
+								execution.status = getStatusUsingPreviousExecutionStatusMethod(execution);
+							}
+							return {
+								id: execution.id,
+								workflowId: execution.workflowId,
+								mode: execution.mode,
+								retryOf: execution.retryOf !== null ? execution.retryOf : undefined,
+								startedAt: new Date(execution.startedAt),
+								status: execution.status ?? null,
+								stoppedAt: execution.stoppedAt ?? null,
+							} as IExecutionsSummary;
+						});
 					}
-				}
 
-				const results = await resultsQuery.getMany();
+					const executingWorkflows = this.activeExecutionsInstance.getActiveExecutions();
 
-				return results.map(result => {
-					return {
-						id: result.id,
-						workflowId: result.workflowId,
-						mode: result.mode,
-						retryOf: result.retryOf !== null ? result.retryOf : undefined,
-						startedAt: new Date(result.startedAt),
-					} as IExecutionsSummary;
-				});
-			} else {
-				const executingWorkflows = this.activeExecutionsInstance.getActiveExecutions();
+					const returnData: IExecutionsSummary[] = [];
 
-				const returnData: IExecutionsSummary[] = [];
+					const filter = req.query.filter ? jsonParse<any>(req.query.filter) : {};
 
-				let filter: any = {}; // tslint:disable-line:no-any
-				if (req.query.filter) {
-					filter = JSON.parse(req.query.filter as string);
-				}
+					const sharedWorkflowIds = await getSharedWorkflowIds(req.user);
 
-				for (const data of executingWorkflows) {
-					if (filter.workflowId !== undefined && filter.workflowId !== data.workflowId) {
-						continue;
-					}
-					returnData.push(
-						{
-							id: data.id.toString(),
-							workflowId: data.workflowId === undefined ? '' : data.workflowId.toString(),
+					for (const data of executingWorkflows) {
+						if (
+							(filter.workflowId !== undefined && filter.workflowId !== data.workflowId) ||
+							(data.workflowId !== undefined && !sharedWorkflowIds.includes(data.workflowId))
+						) {
+							continue;
+						}
+
+						returnData.push({
+							id: data.id,
+							workflowId: data.workflowId === undefined ? '' : data.workflowId,
 							mode: data.mode,
 							retryOf: data.retryOf,
 							startedAt: new Date(data.startedAt),
-						}
-					);
-				}
+							status: data.status,
+						});
+					}
 
-				return returnData;
-			}
-		}));
+					returnData.sort((a, b) => Number(b.id) - Number(a.id));
+
+					return returnData;
+				},
+			),
+		);
 
 		// Forces the execution to stop
-		this.app.post(`/${this.restEndpoint}/executions-current/:id/stop`, ResponseHelper.send(async (req: express.Request, res: express.Response): Promise<IExecutionsStopData> => {
-			if (config.get('executions.mode') === 'queue') {
-				// Manual executions should still be stoppable, so
-				// try notifying the `activeExecutions` to stop it.
-				const result = await this.activeExecutionsInstance.stopExecution(req.params.id);
-				if (result !== undefined) {
+		this.app.post(
+			`/${this.restEndpoint}/executions-current/:id/stop`,
+			ResponseHelper.send(async (req: ExecutionRequest.Stop): Promise<IExecutionsStopData> => {
+				const { id: executionId } = req.params;
+
+				const sharedWorkflowIds = await getSharedWorkflowIds(req.user);
+
+				if (!sharedWorkflowIds.length) {
+					throw new NotFoundError('Execution not found');
+				}
+
+				const fullExecutionData = await Container.get(ExecutionRepository).findSingleExecution(
+					executionId,
+					{
+						where: {
+							workflowId: In(sharedWorkflowIds),
+						},
+					},
+				);
+
+				if (!fullExecutionData) {
+					throw new NotFoundError('Execution not found');
+				}
+
+				if (config.getEnv('executions.mode') === 'queue') {
+					// Manual executions should still be stoppable, so
+					// try notifying the `activeExecutions` to stop it.
+					const result = await this.activeExecutionsInstance.stopExecution(req.params.id);
+
+					if (result === undefined) {
+						// If active execution could not be found check if it is a waiting one
+						try {
+							return await this.waitTracker.stopExecution(req.params.id);
+						} catch (error) {
+							// Ignore, if it errors as then it is probably a currently running
+							// execution
+						}
+					} else {
+						return {
+							mode: result.mode,
+							startedAt: new Date(result.startedAt),
+							stoppedAt: result.stoppedAt ? new Date(result.stoppedAt) : undefined,
+							finished: result.finished,
+							status: result.status,
+						} as IExecutionsStopData;
+					}
+
+					const queue = Container.get(Queue);
+					const currentJobs = await queue.getJobs(['active', 'waiting']);
+
+					const job = currentJobs.find((job) => job.data.executionId === req.params.id);
+
+					if (!job) {
+						throw new Error(`Could not stop "${req.params.id}" as it is no longer in queue.`);
+					} else {
+						await queue.stopJob(job);
+					}
+
 					const returnData: IExecutionsStopData = {
-						mode: result.mode,
-						startedAt: new Date(result.startedAt),
-						stoppedAt: result.stoppedAt ?  new Date(result.stoppedAt) : undefined,
-						finished: result.finished,
+						mode: fullExecutionData.mode,
+						startedAt: new Date(fullExecutionData.startedAt),
+						stoppedAt: fullExecutionData.stoppedAt
+							? new Date(fullExecutionData.stoppedAt)
+							: undefined,
+						finished: fullExecutionData.finished,
+						status: fullExecutionData.status,
 					};
 
 					return returnData;
 				}
 
-				const currentJobs = await Queue.getInstance().getJobs(['active', 'waiting']);
-
-				const job = currentJobs.find(job => job.data.executionId.toString() === req.params.id);
-
-				if (!job) {
-					throw new Error(`Could not stop "${req.params.id}" as it is no longer in queue.`);
-				} else {
-					await Queue.getInstance().stopJob(job);
-				}
-
-				const executionDb = await Db.collections.Execution?.findOne(req.params.id) as IExecutionFlattedDb;
-				const fullExecutionData = ResponseHelper.unflattenExecutionData(executionDb) as IExecutionResponse;
-
-				const returnData: IExecutionsStopData = {
-					mode: fullExecutionData.mode,
-					startedAt: new Date(fullExecutionData.startedAt),
-					stoppedAt: fullExecutionData.stoppedAt ? new Date(fullExecutionData.stoppedAt) : undefined,
-					finished: fullExecutionData.finished,
-				};
-
-				return returnData;
-
-			} else {
-				const executionId = req.params.id;
-
-				// Stopt he execution and wait till it is done and we got the data
+				// Stop the execution and wait till it is done and we got the data
 				const result = await this.activeExecutionsInstance.stopExecution(executionId);
 
+				let returnData: IExecutionsStopData;
 				if (result === undefined) {
-					throw new Error(`The execution id "${executionId}" could not be found.`);
+					// If active execution could not be found check if it is a waiting one
+					returnData = await this.waitTracker.stopExecution(executionId);
+				} else {
+					returnData = {
+						mode: result.mode,
+						startedAt: new Date(result.startedAt),
+						stoppedAt: result.stoppedAt ? new Date(result.stoppedAt) : undefined,
+						finished: result.finished,
+						status: result.status,
+					};
 				}
 
-				const returnData: IExecutionsStopData = {
-					mode: result.mode,
-					startedAt: new Date(result.startedAt),
-					stoppedAt: result.stoppedAt ?  new Date(result.stoppedAt) : undefined,
-					finished: result.finished,
-				};
-
 				return returnData;
-			}
-		}));
-
-
-		// Removes a test webhook
-		this.app.delete(`/${this.restEndpoint}/test-webhook/:id`, ResponseHelper.send(async (req: express.Request, res: express.Response): Promise<boolean> => {
-			const workflowId = req.params.id;
-			return this.testWebhooks.cancelTestWebhook(workflowId);
-		}));
-
-
+			}),
+		);
 
 		// ----------------------------------------
 		// Options
 		// ----------------------------------------
 
 		// Returns all the available timezones
-		this.app.get(`/${this.restEndpoint}/options/timezones`, ResponseHelper.send(async (req: express.Request, res: express.Response): Promise<object> => {
-			return timezones;
-		}));
-
-
-
+		this.app.get(
+			`/${this.restEndpoint}/options/timezones`,
+			ResponseHelper.send(async (req: express.Request, res: express.Response): Promise<object> => {
+				return timezones;
+			}),
+		);
 
 		// ----------------------------------------
 		// Settings
 		// ----------------------------------------
 
+		if (frontendService) {
+			// Returns the current settings for the UI
+			this.app.get(
+				`/${this.restEndpoint}/settings`,
+				ResponseHelper.send(
+					async (req: express.Request, res: express.Response): Promise<IN8nUISettings> => {
+						void Container.get(InternalHooks).onFrontendSettingsAPI(
+							req.headers.sessionid as string,
+						);
 
-		// Returns the settings which are needed in the UI
-		this.app.get(`/${this.restEndpoint}/settings`, ResponseHelper.send(async (req: express.Request, res: express.Response): Promise<IN8nUISettings> => {
-			return this.frontendSettings;
-		}));
-
-
-
-		// ----------------------------------------
-		// Webhooks
-		// ----------------------------------------
-
-		if (config.get('endpoints.disableProductionWebhooksOnMainProcess') !== true) {
-			WebhookServer.registerProductionWebhooks.apply(this);
+						return frontendService.getSettings();
+					},
+				),
+			);
 		}
 
-		// HEAD webhook requests (test for UI)
-		this.app.head(`/${this.endpointWebhookTest}/*`, async (req: express.Request, res: express.Response) => {
-			// Cut away the "/webhook-test/" to get the registred part of the url
-			const requestUrl = (req as ICustomRequest).parsedUrl!.pathname!.slice(this.endpointWebhookTest.length + 2);
+		// ----------------------------------------
+		// EventBus Setup
+		// ----------------------------------------
 
-			let response;
-			try {
-				response = await this.testWebhooks.callTestWebhook('HEAD', requestUrl, req, res);
-			} catch (error) {
-				ResponseHelper.sendErrorResponse(res, error);
-				return;
-			}
-
-			if (response.noWebhookResponse === true) {
-				// Nothing else to do as the response got already sent
-				return;
-			}
-
-			ResponseHelper.sendSuccessResponse(res, response.data, true, response.responseCode);
-		});
-
-		// HEAD webhook requests (test for UI)
-		this.app.options(`/${this.endpointWebhookTest}/*`, async (req: express.Request, res: express.Response) => {
-			// Cut away the "/webhook-test/" to get the registred part of the url
-			const requestUrl = (req as ICustomRequest).parsedUrl!.pathname!.slice(this.endpointWebhookTest.length + 2);
-
-			let allowedMethods: string[];
-			try {
-				allowedMethods = await this.testWebhooks.getWebhookMethods(requestUrl);
-				allowedMethods.push('OPTIONS');
-
-				// Add custom "Allow" header to satisfy OPTIONS response.
-				res.append('Allow', allowedMethods);
-			} catch (error) {
-				ResponseHelper.sendErrorResponse(res, error);
-				return;
-			}
-
-			ResponseHelper.sendSuccessResponse(res, {}, true, 204);
-		});
-
-		// GET webhook requests (test for UI)
-		this.app.get(`/${this.endpointWebhookTest}/*`, async (req: express.Request, res: express.Response) => {
-			// Cut away the "/webhook-test/" to get the registred part of the url
-			const requestUrl = (req as ICustomRequest).parsedUrl!.pathname!.slice(this.endpointWebhookTest.length + 2);
-
-			let response;
-			try {
-				response = await this.testWebhooks.callTestWebhook('GET', requestUrl, req, res);
-			} catch (error) {
-				ResponseHelper.sendErrorResponse(res, error);
-				return;
-			}
-
-			if (response.noWebhookResponse === true) {
-				// Nothing else to do as the response got already sent
-				return;
-			}
-
-			ResponseHelper.sendSuccessResponse(res, response.data, true, response.responseCode);
-		});
-
-		// POST webhook requests (test for UI)
-		this.app.post(`/${this.endpointWebhookTest}/*`, async (req: express.Request, res: express.Response) => {
-			// Cut away the "/webhook-test/" to get the registred part of the url
-			const requestUrl = (req as ICustomRequest).parsedUrl!.pathname!.slice(this.endpointWebhookTest.length + 2);
-
-			let response;
-			try {
-				response = await this.testWebhooks.callTestWebhook('POST', requestUrl, req, res);
-			} catch (error) {
-				ResponseHelper.sendErrorResponse(res, error);
-				return;
-			}
-
-			if (response.noWebhookResponse === true) {
-				// Nothing else to do as the response got already sent
-				return;
-			}
-
-			ResponseHelper.sendSuccessResponse(res, response.data, true, response.responseCode);
-		});
-
+		if (!eventBus.isInitialized) {
+			await eventBus.initialize();
+		}
 
 		if (this.endpointPresetCredentials !== '') {
-
 			// POST endpoint to set preset credentials
-			this.app.post(`/${this.endpointPresetCredentials}`, async (req: express.Request, res: express.Response) => {
+			this.app.post(
+				`/${this.endpointPresetCredentials}`,
+				async (req: express.Request, res: express.Response) => {
+					if (!this.presetCredentialsLoaded) {
+						const body = req.body as ICredentialsOverwrite;
 
-				if (this.presetCredentialsLoaded === false) {
+						if (req.contentType !== 'application/json') {
+							ResponseHelper.sendErrorResponse(
+								res,
+								new Error(
+									'Body must be a valid JSON, make sure the content-type is application/json',
+								),
+							);
+							return;
+						}
 
-					const body = req.body as ICredentialsOverwrite;
+						Container.get(CredentialsOverwrites).setData(body);
 
-					if (req.headers['content-type'] !== 'application/json') {
-						ResponseHelper.sendErrorResponse(res, new Error('Body must be a valid JSON, make sure the content-type is application/json'));
-						return;
+						await frontendService?.generateTypes();
+
+						this.presetCredentialsLoaded = true;
+
+						ResponseHelper.sendSuccessResponse(res, { success: true }, true, 200);
+					} else {
+						ResponseHelper.sendErrorResponse(res, new Error('Preset credentials can be set once'));
 					}
-
-					const loadNodesAndCredentials = LoadNodesAndCredentials();
-
-					const credentialsOverwrites = CredentialsOverwrites();
-
-					await credentialsOverwrites.init(body);
-
-					const credentialTypes = CredentialTypes();
-
-					await credentialTypes.init(loadNodesAndCredentials.credentialTypes);
-
-					this.presetCredentialsLoaded = true;
-
-					ResponseHelper.sendSuccessResponse(res, { success: true }, true, 200);
-
-				} else {
-					ResponseHelper.sendErrorResponse(res, new Error('Preset credentials can be set once'));
-				}
-			});
+				},
+			);
 		}
 
+		const { staticCacheDir } = Container.get(InstanceSettings);
+		if (frontendService) {
+			const staticOptions: ServeStaticOptions = {
+				cacheControl: false,
+				setHeaders: (res: express.Response, path: string) => {
+					const isIndex = path === pathJoin(staticCacheDir, 'index.html');
+					const cacheControl = isIndex
+						? 'no-cache, no-store, must-revalidate'
+						: 'max-age=86400, immutable';
+					res.header('Cache-Control', cacheControl);
+				},
+			};
 
-		// Read the index file and replace the path placeholder
-		const editorUiPath = require.resolve('n8n-editor-ui');
-		const filePath = pathJoin(pathDirname(editorUiPath), 'dist', 'index.html');
-		const n8nPath = config.get('path');
-
-		let readIndexFile = readFileSync(filePath, 'utf8');
-		readIndexFile = readIndexFile.replace(/\/%BASE_PATH%\//g, n8nPath);
-		readIndexFile = readIndexFile.replace(/\/favicon.ico/g, `${n8nPath}favicon.ico`);
-
-		// Serve the altered index.html file separately
-		this.app.get(`/index.html`, async (req: express.Request, res: express.Response) => {
-			res.send(readIndexFile);
-		});
-
-		// Serve the website
-		const startTime = (new Date()).toUTCString();
-		this.app.use('/', express.static(pathJoin(pathDirname(editorUiPath), 'dist'), {
-			index: 'index.html',
-			setHeaders: (res, path) => {
-				if (res.req && res.req.url === '/index.html') {
-					// Set last modified date manually to n8n start time so
-					// that it hopefully refreshes the page when a new version
-					// got used
-					res.setHeader('Last-Modified', startTime);
+			const serveIcons: express.RequestHandler = async (req, res) => {
+				let { scope, packageName } = req.params;
+				if (scope) packageName = `@${scope}/${packageName}`;
+				const filePath = this.loadNodesAndCredentials.resolveIcon(packageName, req.originalUrl);
+				if (filePath) {
+					try {
+						await fsAccess(filePath);
+						return res.sendFile(filePath);
+					} catch {}
 				}
-			},
-		}));
+				res.sendStatus(404);
+			};
+
+			this.app.use('/icons/@:scope/:packageName/*/*.(svg|png)', serveIcons);
+			this.app.use('/icons/:packageName/*/*.(svg|png)', serveIcons);
+
+			this.app.use(
+				'/',
+				express.static(staticCacheDir),
+				express.static(EDITOR_UI_DIST_DIR, staticOptions),
+			);
+
+			const startTime = new Date().toUTCString();
+			this.app.use('/index.html', (req, res, next) => {
+				res.setHeader('Last-Modified', startTime);
+				next();
+			});
+		} else {
+			this.app.use('/', express.static(staticCacheDir));
+		}
 	}
 
-}
-
-export async function start(): Promise<void> {
-	const PORT = config.get('port');
-	const ADDRESS = config.get('listen_address');
-
-	const app = new App();
-
-	await app.config();
-
-	let server;
-
-	if (app.protocol === 'https' && app.sslKey && app.sslCert) {
-		const https = require('https');
-		const privateKey = readFileSync(app.sslKey, 'utf8');
-		const cert = readFileSync(app.sslCert, 'utf8');
-		const credentials = { key: privateKey, cert };
-		server = https.createServer(credentials, app.app);
-	} else {
-		const http = require('http');
-		server = http.createServer(app.app);
+	protected setupPushServer(): void {
+		const { restEndpoint, server, app } = this;
+		setupPushServer(restEndpoint, server, app);
 	}
-
-	server.listen(PORT, ADDRESS, async () => {
-		const versions = await GenericHelpers.getVersions();
-		console.log(`n8n ready on ${ADDRESS}, port ${PORT}`);
-		console.log(`Version: ${versions.cli}`);
-
-		await app.externalHooks.run('n8n.ready', [app]);
-	});
 }

@@ -1,6 +1,4 @@
-import {
-	IDataObject,
-} from 'n8n-workflow';
+import type { IDataObject } from 'n8n-workflow';
 
 export interface IFields {
 	assignee?: IDataObject;
@@ -12,6 +10,7 @@ export interface IFields {
 	project?: IDataObject;
 	summary?: string;
 	reporter?: IDataObject;
+	components?: IDataObject[];
 }
 
 export interface IIssue {

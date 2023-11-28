@@ -1,135 +1,197 @@
-import * as config from '../config';
-import * as express from 'express';
-import { join as pathJoin } from 'path';
-import {
-	readFile as fsReadFile,
-} from 'fs';
-import { promisify } from 'util';
-import { IDataObject } from 'n8n-workflow';
-
-import { IPackageVersions } from './';
-
-const fsReadFileAsync = promisify(fsReadFile);
-
-let versionCache: IPackageVersions | undefined;
-
-
-/**
- * Displays a message to the user
- *
- * @export
- * @param {string} message The message to display
- * @param {string} [level='log']
- */
-export function logOutput(message: string, level = 'log'): void {
-	if (level === 'log') {
-		console.log(message);
-	} else if (level === 'error') {
-		console.error(message);
-	}
-}
-
+import type express from 'express';
+import type {
+	ExecutionError,
+	INode,
+	IRunExecutionData,
+	Workflow,
+	WorkflowExecuteMode,
+} from 'n8n-workflow';
+import { validate } from 'class-validator';
+import { Container } from 'typedi';
+import { Like } from 'typeorm';
+import config from '@/config';
+import type { ExecutionPayload, ICredentialsDb, IWorkflowDb } from '@/Interfaces';
+import type { WorkflowEntity } from '@db/entities/WorkflowEntity';
+import type { CredentialsEntity } from '@db/entities/CredentialsEntity';
+import type { TagEntity } from '@db/entities/TagEntity';
+import type { User } from '@db/entities/User';
+import type { UserUpdatePayload } from '@/requests';
+import { CredentialsRepository } from '@db/repositories/credentials.repository';
+import { ExecutionRepository } from '@db/repositories/execution.repository';
+import { WorkflowRepository } from '@db/repositories/workflow.repository';
+import { BadRequestError } from './errors/response-errors/bad-request.error';
 
 /**
  * Returns the base URL n8n is reachable from
- *
- * @export
- * @returns {string}
  */
 export function getBaseUrl(): string {
-	const protocol = config.get('protocol') as string;
-	const host = config.get('host') as string;
-	const port = config.get('port') as number;
-	const path = config.get('path') as string;
+	const protocol = config.getEnv('protocol');
+	const host = config.getEnv('host');
+	const port = config.getEnv('port');
+	const path = config.getEnv('path');
 
-	if (protocol === 'http' && port === 80 || protocol === 'https' && port === 443) {
+	if ((protocol === 'http' && port === 80) || (protocol === 'https' && port === 443)) {
 		return `${protocol}://${host}${path}`;
 	}
 	return `${protocol}://${host}:${port}${path}`;
 }
 
-
 /**
  * Returns the session id if one is set
- *
- * @export
- * @param {express.Request} req
- * @returns {(string | undefined)}
  */
 export function getSessionId(req: express.Request): string | undefined {
 	return req.headers.sessionid as string | undefined;
 }
 
-
 /**
- * Returns information which version of the packages are installed
+ * Generate a unique name for a workflow or credentials entity.
  *
- * @export
- * @returns {Promise<IPackageVersions>}
+ * - If the name does not yet exist, it returns the requested name.
+ * - If the name already exists once, it returns the requested name suffixed with 2.
+ * - If the name already exists more than once with suffixes, it looks for the max suffix
+ * and returns the requested name with max suffix + 1.
  */
-export async function getVersions(): Promise<IPackageVersions> {
-	if (versionCache !== undefined) {
-		return versionCache;
-	}
 
-	const packageFile = await fsReadFileAsync(pathJoin(__dirname, '../../package.json'), 'utf8') as string;
-	const packageData = JSON.parse(packageFile);
-
-	versionCache = {
-		cli: packageData.version,
+export async function generateUniqueName(
+	requestedName: string,
+	entityType: 'workflow' | 'credentials',
+) {
+	const findConditions = {
+		select: ['name' as const],
+		where: {
+			name: Like(`${requestedName}%`),
+		},
 	};
 
-	return versionCache;
+	const found: Array<WorkflowEntity | ICredentialsDb> =
+		entityType === 'workflow'
+			? await Container.get(WorkflowRepository).find(findConditions)
+			: await Container.get(CredentialsRepository).find(findConditions);
+
+	// name is unique
+	if (found.length === 0) {
+		return requestedName;
+	}
+
+	const maxSuffix = found.reduce((acc, { name }) => {
+		const parts = name.split(`${requestedName} `);
+
+		if (parts.length > 2) return acc;
+
+		const suffix = Number(parts[1]);
+
+		if (!isNaN(suffix) && Math.ceil(suffix) > acc) {
+			acc = Math.ceil(suffix);
+		}
+
+		return acc;
+	}, 0);
+
+	// name is duplicate but no numeric suffixes exist yet
+	if (maxSuffix === 0) {
+		return `${requestedName} 2`;
+	}
+
+	return `${requestedName} ${maxSuffix + 1}`;
 }
 
+export async function validateEntity(
+	entity: WorkflowEntity | CredentialsEntity | TagEntity | User | UserUpdatePayload,
+): Promise<void> {
+	const errors = await validate(entity);
+
+	const errorMessages = errors
+		.reduce<string[]>((acc, cur) => {
+			if (!cur.constraints) return acc;
+			acc.push(...Object.values(cur.constraints));
+			return acc;
+		}, [])
+		.join(' | ');
+
+	if (errorMessages) {
+		throw new BadRequestError(errorMessages);
+	}
+}
 
 /**
- * Gets value from config with support for "_FILE" environment variables
+ * Create an error execution
  *
- * @export
- * @param {string} configKey The key of the config data to get
- * @returns {(Promise<string | boolean | number | undefined>)}
+ * @param {INode} node
+ * @param {IWorkflowDb} workflowData
+ * @param {Workflow} workflow
+ * @param {WorkflowExecuteMode} mode
+ * @returns
+ * @memberof ActiveWorkflowRunner
  */
-export async function getConfigValue(configKey: string): Promise<string | boolean | number | undefined> {
-	const configKeyParts = configKey.split('.');
 
-	// Get the environment variable
-	const configSchema = config.getSchema();
-	// @ts-ignore
-	let currentSchema = configSchema._cvtProperties as IDataObject;
-	for (const key of configKeyParts) {
-		if (currentSchema[key] === undefined) {
-			throw new Error(`Key "${key}" of ConfigKey "${configKey}" does not exist`);
-		} else if ((currentSchema[key]! as IDataObject)._cvtProperties === undefined) {
-			currentSchema = currentSchema[key] as IDataObject;
-		} else {
-			currentSchema = (currentSchema[key] as IDataObject)._cvtProperties as IDataObject;
-		}
-	}
+export async function createErrorExecution(
+	error: ExecutionError,
+	node: INode,
+	workflowData: IWorkflowDb,
+	workflow: Workflow,
+	mode: WorkflowExecuteMode,
+): Promise<void> {
+	const saveDataErrorExecutionDisabled = workflowData?.settings?.saveDataErrorExecution === 'none';
 
-	// Check if environment variable is defined for config key
-	if (currentSchema.env === undefined) {
-		// No environment variable defined, so return value from config
-		return config.get(configKey);
-	}
+	if (saveDataErrorExecutionDisabled) return;
 
-	// Check if special file enviroment variable exists
-	const fileEnvironmentVariable = process.env[currentSchema.env + '_FILE'];
-	if (fileEnvironmentVariable === undefined) {
-		// Does not exist, so return value from config
-		return config.get(configKey);
-	}
+	const executionData: IRunExecutionData = {
+		startData: {
+			destinationNode: node.name,
+			runNodeFilter: [node.name],
+		},
+		executionData: {
+			contextData: {},
+			metadata: {},
+			nodeExecutionStack: [
+				{
+					node,
+					data: {
+						main: [
+							[
+								{
+									json: {},
+									pairedItem: {
+										item: 0,
+									},
+								},
+							],
+						],
+					},
+					source: null,
+				},
+			],
+			waitingExecution: {},
+			waitingExecutionSource: {},
+		},
+		resultData: {
+			runData: {
+				[node.name]: [
+					{
+						startTime: 0,
+						executionTime: 0,
+						error,
+						source: [],
+					},
+				],
+			},
+			error,
+			lastNodeExecuted: node.name,
+		},
+	};
 
-	let data;
-	try {
-		data = await fsReadFileAsync(fileEnvironmentVariable, 'utf8') as string;
-	} catch (error) {
-		if (error.code === 'ENOENT') {
-			throw new Error(`The file "${fileEnvironmentVariable}" could not be found.`);
-		}
+	const fullExecutionData: ExecutionPayload = {
+		data: executionData,
+		mode,
+		finished: false,
+		startedAt: new Date(),
+		workflowData,
+		workflowId: workflow.id,
+		stoppedAt: new Date(),
+		status: 'error',
+	};
 
-		throw error;
-	}
-
-	return data;
+	await Container.get(ExecutionRepository).createNewExecution(fullExecutionData);
 }
+
+export const DEFAULT_EXECUTIONS_GET_ALL_LIMIT = 20;

@@ -2,17 +2,19 @@
 	"node": "n8n-nodes-base.graphql",
 	"nodeVersion": "1.0",
 	"codexVersion": "1.0",
-	"categories": [
-		"Data & Storage",
-		"Development"
-	],
+	"categories": ["Data & Storage", "Development"],
 	"resources": {
 		"primaryDocumentation": [
 			{
-				"url": "https://docs.n8n.io/nodes/n8n-nodes-base.graphql/"
+				"url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.graphql/"
 			}
 		],
 		"generic": [
+			{
+				"label": "What are APIs and how to use them with no code",
+				"icon": " 🪢",
+				"url": "https://n8n.io/blog/what-are-apis-how-to-use-them-with-no-code/"
+			},
 			{
 				"label": "How to automatically give kudos to contributors with GitHub, Slack, and n8n",
 				"icon": "👏",

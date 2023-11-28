@@ -1,24 +1,24 @@
-import {
-	IExecuteFunctions,
-	IExecuteSingleFunctions,
-	ILoadOptionsFunctions,
-} from 'n8n-core';
+import type { OptionsWithUri } from 'request';
 
-import {
-	OptionsWithUri,
-} from 'request';
-
-import {
+import type {
 	IDataObject,
+	IExecuteFunctions,
+	ILoadOptionsFunctions,
+	JsonObject,
 } from 'n8n-workflow';
+import { NodeApiError } from 'n8n-workflow';
 
-export async function contentfulApiRequest(this: IExecuteFunctions | IExecuteSingleFunctions | ILoadOptionsFunctions, method: string, resource: string, body: any = {}, qs: IDataObject = {}, uri?: string, option: IDataObject = {}): Promise<any> { // tslint:disable-line:no-any
+export async function contentfulApiRequest(
+	this: IExecuteFunctions | ILoadOptionsFunctions,
+	method: string,
+	resource: string,
 
-	const credentials = this.getCredentials('contentfulApi');
-	if (credentials === undefined) {
-		throw new Error('No credentials got returned!');
-	}
-
+	body: any = {},
+	qs: IDataObject = {},
+	uri?: string,
+	_option: IDataObject = {},
+): Promise<any> {
+	const credentials = await this.getCredentials('contentfulApi');
 	const source = this.getNodeParameter('source', 0) as string;
 	const isPreview = source === 'previewApi';
 
@@ -26,7 +26,7 @@ export async function contentfulApiRequest(this: IExecuteFunctions | IExecuteSin
 		method,
 		qs,
 		body,
-		uri: uri ||`https://${isPreview ? 'preview' : 'cdn'}.contentful.com${resource}`,
+		uri: uri || `https://${isPreview ? 'preview' : 'cdn'}.contentful.com${resource}`,
 		json: true,
 	};
 
@@ -37,15 +37,21 @@ export async function contentfulApiRequest(this: IExecuteFunctions | IExecuteSin
 	}
 
 	try {
-		return await this.helpers.request!(options);
+		return await this.helpers.request(options);
 	} catch (error) {
-		throw new Error(`Contentful error response [${error.statusCode}]: ${error.error.message}`);
+		throw new NodeApiError(this.getNode(), error as JsonObject);
 	}
-
 }
 
-export async function contenfulApiRequestAllItems(this: ILoadOptionsFunctions | IExecuteFunctions, propertyName: string, method: string, resource: string, body: any = {}, query: IDataObject = {}): Promise<any> { // tslint:disable-line:no-any
+export async function contentfulApiRequestAllItems(
+	this: ILoadOptionsFunctions | IExecuteFunctions,
+	propertyName: string,
+	method: string,
+	resource: string,
 
+	body: any = {},
+	query: IDataObject = {},
+): Promise<any> {
 	const returnData: IDataObject[] = [];
 
 	let responseData;
@@ -56,10 +62,8 @@ export async function contenfulApiRequestAllItems(this: ILoadOptionsFunctions | 
 	do {
 		responseData = await contentfulApiRequest.call(this, method, resource, body, query);
 		query.skip = (query.skip + 1) * query.limit;
-		returnData.push.apply(returnData, responseData[propertyName]);
-	} while (
-		returnData.length < responseData.total
-	);
+		returnData.push.apply(returnData, responseData[propertyName] as IDataObject[]);
+	} while (returnData.length < responseData.total);
 
 	return returnData;
 }

@@ -1,17 +1,18 @@
-import {
-	ICredentialType,
-	NodePropertyTypes,
-} from 'n8n-workflow';
+import type { ICredentialType, INodeProperties } from 'n8n-workflow';
 
 export class SecurityScorecardApi implements ICredentialType {
 	name = 'securityScorecardApi';
+
 	displayName = 'SecurityScorecard API';
+
 	documentationUrl = 'securityScorecard';
-	properties = [
+
+	properties: INodeProperties[] = [
 		{
 			displayName: 'API Key',
 			name: 'apiKey',
-			type: 'string' as NodePropertyTypes,
+			type: 'string',
+			typeOptions: { password: true },
 			default: '',
 			required: true,
 		},

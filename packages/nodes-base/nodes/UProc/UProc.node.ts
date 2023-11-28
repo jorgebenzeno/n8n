@@ -1,31 +1,23 @@
-import {
+/* eslint-disable n8n-nodes-base/node-filename-against-convention */
+import type {
 	IExecuteFunctions,
-} from 'n8n-core';
-
-import {
 	IDataObject,
 	INodeExecutionData,
 	INodeType,
 	INodeTypeDescription,
 } from 'n8n-workflow';
 
-import {
-	uprocApiRequest,
-} from './GenericFunctions';
+import { uprocApiRequest } from './GenericFunctions';
 
-import {
-	groupOptions,
-} from './GroupDescription';
+import { groupOptions } from './GroupDescription';
 
-import {
-	toolOperations,
-	toolParameters,
-} from './ToolDescription';
+import { toolOperations, toolParameters } from './ToolDescription';
 
 export class UProc implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'uProc',
 		name: 'uproc',
+		// eslint-disable-next-line n8n-nodes-base/node-class-description-icon-not-svg
 		icon: 'file:uproc.png',
 		group: ['output'],
 		version: 1,
@@ -33,7 +25,6 @@ export class UProc implements INodeType {
 		description: 'Consume uProc API',
 		defaults: {
 			name: 'uProc',
-			color: '#219ef9',
 		},
 		inputs: ['main'],
 		outputs: ['main'],
@@ -75,7 +66,7 @@ export class UProc implements INodeType {
 						displayName: 'Data Webhook',
 						name: 'dataWebhook',
 						type: 'string',
-						description: 'URL to send tool response when tool has resolved your request. You can create your own webhook at en <a href="https://beeceptor.com" target="_blank">Beeceptor</a>, <a href="https://www.integromat.com/" target="_blank">Integromat</a>, <a href="https://zapier.com/" target="_blank">Zapier</a> or <a href="https://n8n.io/" target="_blank">n8n</a>',
+						description: 'URL to send tool response when tool has resolved your request',
 						default: '',
 					},
 				],
@@ -86,7 +77,7 @@ export class UProc implements INodeType {
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
 		const items = this.getInputData();
 		const returnData: IDataObject[] = [];
-		const length = items.length as unknown as number;
+		const length = items.length;
 		let responseData;
 		const group = this.getNodeParameter('group', 0) as string;
 		const tool = this.getNodeParameter('tool', 0) as string;
@@ -95,46 +86,59 @@ export class UProc implements INodeType {
 		const dataWebhook = additionalOptions.dataWebhook as string;
 
 		interface LooseObject {
-			[key: string]: any; // tslint:disable-line:no-any
+			[key: string]: any;
 		}
 
-		const fields = toolParameters.filter((field) => {
-			return field && field.displayOptions && field.displayOptions.show && field.displayOptions.show.group && field.displayOptions.show.tool &&
-				field.displayOptions.show.group.indexOf(group) !== -1 && field.displayOptions.show.tool.indexOf(tool) !== -1;
-		}).map((field) => {
-			return field.name;
-		});
-
-		const requestPromises = [];
-		for (let i = 0; i < length; i++) {
-			const toolKey = tool.replace(/([A-Z]+)/g, '-$1').toLowerCase();
-			const body: LooseObject = {
-				processor: toolKey,
-				params: {},
-			};
-
-			fields.forEach((field) => {
-				if (field && field.length) {
-					const data = this.getNodeParameter(field, i) as string;
-					body.params[field] = data + '';
-				}
+		const fields = toolParameters
+			.filter((field) => {
+				return (
+					field?.displayOptions?.show?.group &&
+					field.displayOptions.show.tool &&
+					field.displayOptions.show.group.indexOf(group) !== -1 &&
+					field.displayOptions.show.tool.indexOf(tool) !== -1
+				);
+			})
+			.map((field) => {
+				return field.name;
 			});
 
-			if (dataWebhook && dataWebhook.length) {
-				body.callback = {};
-			}
+		for (let i = 0; i < length; i++) {
+			try {
+				const toolKey = tool.replace(/([A-Z]+)/g, '-$1').toLowerCase();
+				const body: LooseObject = {
+					processor: toolKey,
+					params: {},
+				};
 
-			if (dataWebhook && dataWebhook.length) {
-				body.callback.data = dataWebhook;
-			}
+				fields.forEach((field) => {
+					if (field?.length) {
+						const data = this.getNodeParameter(field, i) as string;
+						body.params[field] = data + '';
+					}
+				});
 
-			//Change to multiple requests
-			responseData = await uprocApiRequest.call(this, 'POST', body);
+				if (dataWebhook?.length) {
+					body.callback = {};
+				}
 
-			if (Array.isArray(responseData)) {
-				returnData.push.apply(returnData, responseData as IDataObject[]);
-			} else {
-				returnData.push(responseData as IDataObject);
+				if (dataWebhook?.length) {
+					body.callback.data = dataWebhook;
+				}
+
+				//Change to multiple requests
+				responseData = await uprocApiRequest.call(this, 'POST', body);
+
+				if (Array.isArray(responseData)) {
+					returnData.push.apply(returnData, responseData as IDataObject[]);
+				} else {
+					returnData.push(responseData as IDataObject);
+				}
+			} catch (error) {
+				if (this.continueOnFail()) {
+					returnData.push({ error: error.message });
+					continue;
+				}
+				throw error;
 			}
 		}
 		return [this.helpers.returnJsonArray(returnData)];

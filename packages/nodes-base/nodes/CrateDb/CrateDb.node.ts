@@ -1,30 +1,32 @@
-import { IExecuteFunctions } from 'n8n-core';
-import {
-	IDataObject,
+import type {
+	IExecuteFunctions,
 	INodeExecutionData,
 	INodeType,
 	INodeTypeDescription,
 } from 'n8n-workflow';
+import { NodeOperationError } from 'n8n-workflow';
 
+import pgPromise from 'pg-promise';
 import {
+	generateReturning,
 	getItemCopy,
+	getItemsCopy,
 	pgInsert,
-	pgQuery,
-} from '../Postgres/Postgres.node.functions';
-
-import * as pgPromise from 'pg-promise';
+	pgQueryV2,
+	pgUpdate,
+} from '../Postgres/v1/genericFunctions';
 
 export class CrateDb implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'CrateDB',
 		name: 'crateDb',
+		// eslint-disable-next-line n8n-nodes-base/node-class-description-icon-not-svg
 		icon: 'file:cratedb.png',
 		group: ['input'],
 		version: 1,
-		description: 'Add and update data in CrateDB.',
+		description: 'Add and update data in CrateDB',
 		defaults: {
 			name: 'CrateDB',
-			color: '#47889f',
 		},
 		inputs: ['main'],
 		outputs: ['main'],
@@ -39,25 +41,28 @@ export class CrateDb implements INodeType {
 				displayName: 'Operation',
 				name: 'operation',
 				type: 'options',
+				noDataExpression: true,
 				options: [
 					{
 						name: 'Execute Query',
 						value: 'executeQuery',
 						description: 'Execute an SQL query',
+						action: 'Execute a SQL query',
 					},
 					{
 						name: 'Insert',
 						value: 'insert',
 						description: 'Insert rows in database',
+						action: 'Insert rows in database',
 					},
 					{
 						name: 'Update',
 						value: 'update',
 						description: 'Update rows in database',
+						action: 'Update rows in database',
 					},
 				],
 				default: 'insert',
-				description: 'The operation to perform.',
 			},
 
 			// ----------------------------------
@@ -67,8 +72,11 @@ export class CrateDb implements INodeType {
 				displayName: 'Query',
 				name: 'query',
 				type: 'string',
+				noDataExpression: true,
 				typeOptions: {
+					editor: 'sqlEditor',
 					rows: 5,
+					sqlDialect: 'PostgreSQL',
 				},
 				displayOptions: {
 					show: {
@@ -76,9 +84,10 @@ export class CrateDb implements INodeType {
 					},
 				},
 				default: '',
-				placeholder: 'SELECT id, name FROM product WHERE id < 40',
+				placeholder: 'SELECT id, name FROM product WHERE quantity > $1 AND price <= $2',
 				required: true,
-				description: 'The SQL query to execute.',
+				description:
+					'The SQL query to execute. You can use n8n expressions or $1 and $2 in conjunction with query parameters.',
 			},
 
 			// ----------------------------------
@@ -108,7 +117,7 @@ export class CrateDb implements INodeType {
 				},
 				default: '',
 				required: true,
-				description: 'Name of the table in which to insert data to.',
+				description: 'Name of the table in which to insert data to',
 			},
 			{
 				displayName: 'Columns',
@@ -122,24 +131,25 @@ export class CrateDb implements INodeType {
 				default: '',
 				placeholder: 'id,name,description',
 				description:
-					'Comma separated list of the properties which should used as columns for the new rows.',
-			},
-			{
-				displayName: 'Return Fields',
-				name: 'returnFields',
-				type: 'string',
-				displayOptions: {
-					show: {
-						operation: ['insert'],
-					},
-				},
-				default: '*',
-				description: 'Comma separated list of the fields that the operation will return',
+					'Comma-separated list of the properties which should used as columns for the new rows',
 			},
 
 			// ----------------------------------
 			//         update
 			// ----------------------------------
+			{
+				displayName: 'Schema',
+				name: 'schema',
+				type: 'string',
+				displayOptions: {
+					show: {
+						operation: ['update'],
+					},
+				},
+				default: 'doc',
+				required: true,
+				description: 'Name of the schema the table belongs to',
+			},
 			{
 				displayName: 'Table',
 				name: 'table',
@@ -164,8 +174,9 @@ export class CrateDb implements INodeType {
 				},
 				default: 'id',
 				required: true,
+				// eslint-disable-next-line n8n-nodes-base/node-param-description-miscased-id
 				description:
-					'Name of the property which decides which rows in the database should be updated. Normally that would be "id".',
+					'Comma-separated list of the properties which decides which rows in the database should be updated. Normally that would be "id".',
 			},
 			{
 				displayName: 'Columns',
@@ -179,17 +190,75 @@ export class CrateDb implements INodeType {
 				default: '',
 				placeholder: 'name,description',
 				description:
-					'Comma separated list of the properties which should used as columns for rows to update.',
+					'Comma-separated list of the properties which should used as columns for rows to update',
+			},
+
+			// ----------------------------------
+			//         insert,update
+			// ----------------------------------
+			{
+				displayName: 'Return Fields',
+				name: 'returnFields',
+				type: 'string',
+				displayOptions: {
+					show: {
+						operation: ['insert', 'update'],
+					},
+				},
+				default: '*',
+				description: 'Comma-separated list of the fields that the operation will return',
+			},
+			// ----------------------------------
+			//         additional fields
+			// ----------------------------------
+			{
+				displayName: 'Additional Fields',
+				name: 'additionalFields',
+				type: 'collection',
+				placeholder: 'Add Field',
+				default: {},
+				options: [
+					{
+						displayName: 'Mode',
+						name: 'mode',
+						type: 'options',
+						options: [
+							{
+								name: 'Independently',
+								value: 'independently',
+								description: 'Execute each query independently',
+							},
+							{
+								name: 'Multiple Queries',
+								value: 'multiple',
+								description: '<b>Default</b>. Sends multiple queries at once to database.',
+							},
+						],
+						default: 'multiple',
+						description:
+							'The way queries should be sent to database. Can be used in conjunction with <b>Continue on Fail</b>. See <a href="https://docs.n8n.io/integrations/builtin/app-nodes/n8n-nodes-base.cratedb/">the docs</a> for more examples.',
+					},
+					{
+						displayName: 'Query Parameters',
+						name: 'queryParams',
+						type: 'string',
+						displayOptions: {
+							show: {
+								'/operation': ['executeQuery'],
+							},
+						},
+						default: '',
+						placeholder: 'quantity,price',
+						description:
+							'Comma-separated list of properties which should be used as query parameters',
+					},
+				],
 			},
 		],
 	};
 
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
-		const credentials = this.getCredentials('crateDb');
-
-		if (credentials === undefined) {
-			throw new Error('No credentials got returned!');
-		}
+		const credentials = await this.getCredentials('crateDb');
 
 		const pgp = pgPromise();
 
@@ -205,84 +274,119 @@ export class CrateDb implements INodeType {
 
 		const db = pgp(config);
 
-		let returnItems = [];
+		let returnItems: INodeExecutionData[] = [];
 
 		const items = this.getInputData();
-		const operation = this.getNodeParameter('operation', 0) as string;
+		const operation = this.getNodeParameter('operation', 0);
 
 		if (operation === 'executeQuery') {
 			// ----------------------------------
 			//         executeQuery
 			// ----------------------------------
 
-			const queryResult = await pgQuery(this.getNodeParameter, pgp, db, items);
+			const queryResult = await pgQueryV2.call(this, pgp, db, items, this.continueOnFail(), {
+				resolveExpression: true,
+			});
 
-			returnItems = this.helpers.returnJsonArray(queryResult as IDataObject[]);
+			returnItems = this.helpers.returnJsonArray(queryResult);
 		} else if (operation === 'insert') {
 			// ----------------------------------
 			//         insert
 			// ----------------------------------
 
-			const [insertData, insertItems] = await pgInsert(this.getNodeParameter, pgp, db, items);
+			const insertData = await pgInsert(
+				this.getNodeParameter,
+				pgp,
+				db,
+				items,
+				this.continueOnFail(),
+			);
 
-			// Add the id to the data
 			for (let i = 0; i < insertData.length; i++) {
 				returnItems.push({
-					json: {
-						...insertData[i],
-						...insertItems[i],
-					},
+					json: insertData[i],
 				});
 			}
 		} else if (operation === 'update') {
 			// ----------------------------------
 			//         update
 			// ----------------------------------
-			const tableName = this.getNodeParameter('table', 0) as string;
-			const updateKey = this.getNodeParameter('updateKey', 0) as string;
 
-			const queries : string[] = [];
-			const updatedKeys : string[] = [];
-			let updateKeyValue : string | number;
-			let columns : string[] = [];
+			const additionalFields = this.getNodeParameter('additionalFields', 0);
+			const mode = additionalFields.mode ?? ('multiple' as string);
 
-			items.map(item => {
-				const setOperations : string[] = [];
-				columns = Object.keys(item.json);
-				columns.map((col : string) => {
-					if (col !== updateKey) {
-						if (typeof item.json[col] === 'string') {
-							setOperations.push(`${col} = \'${item.json[col]}\'`);
-						} else {
-							setOperations.push(`${col} = ${item.json[col]}`);
-						}
+			if (mode === 'independently') {
+				const updateItems = await pgUpdate(
+					this.getNodeParameter,
+					pgp,
+					db,
+					items,
+					this.continueOnFail(),
+				);
+
+				returnItems = this.helpers.returnJsonArray(updateItems);
+			} else if (mode === 'multiple') {
+				// Crate db does not support multiple-update queries
+				// Therefore we cannot invoke `pgUpdate` using multiple mode
+				// so we have to call multiple updates manually here
+
+				const table = this.getNodeParameter('table', 0) as string;
+				const schema = this.getNodeParameter('schema', 0) as string;
+				const updateKeys = (this.getNodeParameter('updateKey', 0) as string)
+					.split(',')
+					.map((column) => column.trim());
+				const columns = (this.getNodeParameter('columns', 0) as string)
+					.split(',')
+					.map((column) => column.trim());
+				const queryColumns = columns.slice();
+
+				updateKeys.forEach((updateKey) => {
+					if (!queryColumns.includes(updateKey)) {
+						columns.unshift(updateKey);
+						queryColumns.unshift('?' + updateKey);
 					}
 				});
 
-				updateKeyValue = item.json[updateKey] as string | number;
+				const cs = new pgp.helpers.ColumnSet(queryColumns, { table: { table, schema } });
 
-				if (updateKeyValue === undefined) {
-					throw new Error('No value found for update key!');
+				const where =
+					' WHERE ' +
+					updateKeys
+						// eslint-disable-next-line n8n-local-rules/no-interpolation-in-regular-string
+						.map((updateKey) => pgp.as.name(updateKey) + ' = ${' + updateKey + '}')
+						.join(' AND ');
+				// updateKeyValue = item.json[updateKey] as string | number;
+				// if (updateKeyValue === undefined) {
+				// 	throw new NodeOperationError(this.getNode(), 'No value found for update key!');
+				// }
+
+				const returning = generateReturning(
+					pgp,
+					this.getNodeParameter('returnFields', 0) as string,
+				);
+				const queries: string[] = [];
+				for (let i = 0; i < items.length; i++) {
+					const itemCopy = getItemCopy(items[i], columns);
+					queries.push(
+						(pgp.helpers.update(itemCopy, cs) as string) +
+							pgp.as.format(where, itemCopy) +
+							returning,
+					);
 				}
-
-				updatedKeys.push(updateKeyValue as string);
-
-				const query = `UPDATE "${tableName}" SET ${setOperations.join(',')} WHERE ${updateKey} = ${updateKeyValue};`;
-				queries.push(query);
-			});
-
-
-			await db.any(pgp.helpers.concat(queries));
-
-			returnItems = this.helpers.returnJsonArray(getItemCopy(items, columns) as IDataObject[]);
+				await db.multi(pgp.helpers.concat(queries));
+				returnItems = this.helpers.returnJsonArray(getItemsCopy(items, columns));
+			}
 		} else {
-			await pgp.end();
-			throw new Error(`The operation "${operation}" is not supported!`);
+			await db.$pool.end();
+			throw new NodeOperationError(
+				this.getNode(),
+				`The operation "${operation}" is not supported!`,
+			);
 		}
 
-		// Close the connection
-		await pgp.end();
+		// shuts down the connection pool associated with the db object to allow the process to finish
+		await db.$pool.end();
 
-		return this.prepareOutputData(returnItems);
+		return [returnItems];
 	}
 }

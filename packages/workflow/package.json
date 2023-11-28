@@ -1,6 +1,6 @@
 {
   "name": "n8n-workflow",
-  "version": "0.55.0",
+  "version": "1.18.0",
   "description": "Workflow base code of n8n",
   "license": "SEE LICENSE IN LICENSE.md",
   "homepage": "https://n8n.io",
@@ -12,48 +12,56 @@
     "type": "git",
     "url": "git+https://github.com/n8n-io/n8n.git"
   },
-  "main": "dist/src/index",
-  "types": "dist/src/index.d.ts",
+  "main": "dist/index.js",
+  "module": "src/index.ts",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "require": "./dist/index.js",
+      "import": "./src/index.ts",
+      "types": "./dist/index.d.ts"
+    },
+    "./*": "./*"
+  },
   "scripts": {
-    "dev": "npm run watch",
-    "build": "tsc",
-    "tslint": "tslint -p tsconfig.json -c tslint.json",
-    "tslintfix": "tslint --fix -p tsconfig.json -c tslint.json",
-    "watch": "tsc --watch",
-    "test": "jest"
+    "clean": "rimraf dist .turbo",
+    "dev": "pnpm watch",
+    "typecheck": "tsc",
+    "build": "tsc -p tsconfig.build.json",
+    "format": "prettier --write . --ignore-path ../../.prettierignore",
+    "lint": "eslint . --quiet",
+    "lintfix": "eslint . --fix",
+    "watch": "tsc -p tsconfig.build.json --watch",
+    "test": "jest",
+    "test:dev": "jest --watch"
   },
   "files": [
-    "dist"
+    "dist/**/*"
   ],
   "devDependencies": {
+    "@types/crypto-js": "^4.1.3",
+    "@types/deep-equal": "^1.0.1",
     "@types/express": "^4.17.6",
-    "@types/jest": "^26.0.13",
-    "@types/lodash.get": "^4.4.6",
-    "@types/node": "^14.14.40",
-    "jest": "^26.4.2",
-    "ts-jest": "^26.3.0",
-    "tslint": "^6.1.2",
-    "typescript": "~3.9.7"
+    "@types/jmespath": "^0.15.0",
+    "@types/lodash": "^4.14.195",
+    "@types/luxon": "^3.2.0",
+    "@types/xml2js": "^0.4.11"
   },
   "dependencies": {
-    "lodash.get": "^4.4.2",
-    "riot-tmpl": "^3.0.8"
-  },
-  "jest": {
-    "transform": {
-      "^.+\\.tsx?$": "ts-jest"
-    },
-    "testURL": "http://localhost/",
-    "testRegex": "(/__tests__/.*|(\\.|/)(test|spec))\\.(jsx?|tsx?)$",
-    "testPathIgnorePatterns": [
-      "/dist/",
-      "/node_modules/"
-    ],
-    "moduleFileExtensions": [
-      "ts",
-      "tsx",
-      "js",
-      "json"
-    ]
+    "@n8n/tournament": "1.0.2",
+    "@n8n_io/riot-tmpl": "4.0.0",
+    "ast-types": "0.15.2",
+    "crypto-js": "4.2.0",
+    "deep-equal": "2.2.0",
+    "esprima-next": "5.8.4",
+    "form-data": "4.0.0",
+    "jmespath": "0.16.0",
+    "js-base64": "3.7.2",
+    "lodash": "4.17.21",
+    "luxon": "3.3.0",
+    "recast": "0.21.5",
+    "title-case": "3.0.3",
+    "transliteration": "2.3.5",
+    "xml2js": "0.5.0"
   }
 }

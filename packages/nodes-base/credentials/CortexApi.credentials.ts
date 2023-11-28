@@ -1,27 +1,48 @@
-import {
+import type {
+	IAuthenticateGeneric,
+	ICredentialTestRequest,
 	ICredentialType,
-	NodePropertyTypes,
+	INodeProperties,
 } from 'n8n-workflow';
-
 
 export class CortexApi implements ICredentialType {
 	name = 'cortexApi';
+
 	displayName = 'Cortex API';
+
 	documentationUrl = 'cortex';
-	properties = [
+
+	properties: INodeProperties[] = [
 		{
 			displayName: 'API Key',
 			name: 'cortexApiKey',
-			type: 'string' as NodePropertyTypes,
+			type: 'string',
+			typeOptions: { password: true },
 			default: '',
 		},
 		{
 			displayName: 'Cortex Instance',
 			name: 'host',
-			type: 'string' as NodePropertyTypes,
+			type: 'string',
 			description: 'The URL of the Cortex instance',
 			default: '',
 			placeholder: 'https://localhost:9001',
 		},
 	];
+
+	authenticate: IAuthenticateGeneric = {
+		type: 'generic',
+		properties: {
+			headers: {
+				Authorization: '=Bearer {{$credentials.cortexApiKey}}',
+			},
+		},
+	};
+
+	test: ICredentialTestRequest = {
+		request: {
+			baseURL: '={{$credentials.host}}',
+			url: '/api/analyzer',
+		},
+	};
 }

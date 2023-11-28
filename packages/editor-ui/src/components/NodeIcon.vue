@@ -1,103 +1,122 @@
 <template>
-	<div class="node-icon-wrapper" :style="iconStyleData" :class="{full: isSvgIcon}">
-		<div v-if="nodeIconData !== null" class="icon">
-			<img :src="nodeIconData.path" style="width: 100%; height: 100%;" v-if="nodeIconData.type === 'file'"/>
-			<font-awesome-icon :icon="nodeIconData.path" v-else-if="nodeIconData.type === 'fa'" />
-		</div>
-		<div v-else class="node-icon-placeholder">
-			{{nodeType !== null ? nodeType.displayName.charAt(0) : '?' }}
-		</div>
-	</div>
+	<n8n-node-icon
+		:type="type"
+		:src="iconSource.path || iconSource.fileBuffer"
+		:name="iconSource.icon"
+		:color="color"
+		:disabled="disabled"
+		:size="size"
+		:circle="circle"
+		:nodeTypeName="nodeType ? nodeType.displayName : ''"
+		:showTooltip="showTooltip"
+		:badge="badge"
+		@click="(e) => $emit('click')"
+	></n8n-node-icon>
 </template>
 
 <script lang="ts">
+import type { IVersionNode } from '@/Interface';
+import { useRootStore } from '@/stores/n8nRoot.store';
+import type { INodeTypeDescription } from 'n8n-workflow';
+import { mapStores } from 'pinia';
+import { defineComponent, type PropType } from 'vue';
 
-import Vue from 'vue';
-
-interface NodeIconData {
-	type: string;
-	path: string;
-	fileExtension?: string;
+interface NodeIconSource {
+	path?: string;
+	fileBuffer?: string;
+	icon?: string;
 }
 
-export default Vue.extend({
+export default defineComponent({
 	name: 'NodeIcon',
-	props: [
-		'nodeType',
-		'size',
-	],
+	props: {
+		nodeType: {
+			type: Object as PropType<INodeTypeDescription | IVersionNode | null>,
+		},
+		size: {
+			type: Number,
+			required: false,
+		},
+		disabled: {
+			type: Boolean,
+			default: false,
+		},
+		circle: {
+			type: Boolean,
+			default: false,
+		},
+		colorDefault: {
+			type: String,
+			required: false,
+		},
+		showTooltip: {
+			type: Boolean,
+			default: false,
+		},
+	},
 	computed: {
-		iconStyleData (): object {
-			if (!this.size) {
-				return {};
-			}
-
-			const size = parseInt(this.size, 10);
-
-			return {
-				width: size + 'px',
-				height: size + 'px',
-				'font-size': Math.floor(parseInt(this.size, 10) * 0.6) + 'px',
-				'line-height': size + 'px',
-				'border-radius': Math.ceil(size / 2) + 'px',
-			};
-		},
-		isSvgIcon (): boolean {
-			if (this.nodeIconData && this.nodeIconData.type === 'file' && this.nodeIconData.fileExtension === 'svg') {
-				return true;
-			}
-			return false;
-		},
-		nodeIconData (): null | NodeIconData {
-			if (this.nodeType === null) {
-				return null;
-			}
-
-			const restUrl = this.$store.getters.getRestUrl;
-
-			if (this.nodeType.icon) {
-				let type, path;
-				[type, path] = this.nodeType.icon.split(':');
-				const returnData: NodeIconData = {
-					type,
-					path,
-				};
-
-				if (type === 'file') {
-					returnData.path = restUrl + '/node-icon/' + this.nodeType.name;
-					returnData.fileExtension = path.split('.').slice(-1).join();
+		...mapStores(useRootStore),
+		type(): string {
+			const nodeType = this.nodeType;
+			let iconType = 'unknown';
+			if (nodeType) {
+				if (nodeType.iconUrl) return 'file';
+				if ((nodeType as IVersionNode).iconData) {
+					iconType = (nodeType as IVersionNode).iconData.type;
+				} else if (nodeType.icon) {
+					iconType = nodeType.icon.split(':')[0] === 'file' ? 'file' : 'icon';
 				}
-
-				return returnData;
 			}
-			return null;
+			return iconType;
+		},
+		color(): string {
+			const nodeType = this.nodeType;
+			if (nodeType?.defaults?.color) {
+				return nodeType.defaults.color.toString();
+			}
+			if (this.colorDefault) {
+				return this.colorDefault;
+			}
+			return '';
+		},
+		iconSource(): NodeIconSource {
+			const nodeType = this.nodeType;
+			const baseUrl = this.rootStore.getBaseUrl;
+			const iconSource = {} as NodeIconSource;
+
+			if (nodeType) {
+				// If node type has icon data, use it
+				if ((nodeType as IVersionNode).iconData) {
+					return {
+						icon: (nodeType as IVersionNode).iconData.icon,
+						fileBuffer: (nodeType as IVersionNode).iconData.fileBuffer,
+					};
+				}
+				if (nodeType.iconUrl) {
+					return { path: baseUrl + nodeType.iconUrl };
+				}
+				// Otherwise, extract it from icon prop
+				if (nodeType.icon) {
+					const [type, path] = nodeType.icon.split(':');
+					if (type === 'file') {
+						throw new Error(`Unexpected icon: ${nodeType.icon}`);
+					} else {
+						iconSource.icon = path;
+					}
+				}
+			}
+			return iconSource;
+		},
+		badge(): { src: string; type: string } | undefined {
+			const nodeType = this.nodeType as INodeTypeDescription;
+			if (nodeType && 'badgeIconUrl' in nodeType && nodeType.badgeIconUrl) {
+				return { type: 'file', src: this.rootStore.getBaseUrl + nodeType.badgeIconUrl };
+			}
+
+			return undefined;
 		},
 	},
 });
 </script>
 
-<style lang="scss">
-
-.node-icon-wrapper {
-	width: 30px;
-	height: 30px;
-	border-radius: 15px;
-	color: #444;
-	line-height: 30px;
-	font-size: 1.1em;
-	overflow: hidden;
-	background-color: #fff;
-	text-align: center;
-	font-weight: bold;
-	font-size: 20px;
-
-	&.full .icon {
-		margin: 0.24em;
-	}
-
-	.node-icon-placeholder {
-		text-align: center;
-	}
-}
-
-</style>
+<style lang="scss"></style>

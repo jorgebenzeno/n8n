@@ -1,17 +1,24 @@
-import { OptionsWithUri } from 'request';
-import {
+import type { OptionsWithUri } from 'request';
+import type {
+	IDataObject,
 	IExecuteFunctions,
-	IExecuteSingleFunctions,
 	IHookFunctions,
 	ILoadOptionsFunctions,
-} from 'n8n-core';
-import { IDataObject } from 'n8n-workflow';
+	JsonObject,
+} from 'n8n-workflow';
+import { NodeApiError } from 'n8n-workflow';
 
-export async function bitbucketApiRequest(this: IHookFunctions | IExecuteFunctions | IExecuteSingleFunctions | ILoadOptionsFunctions, method: string, resource: string, body: any = {}, qs: IDataObject = {}, uri?: string, option: IDataObject = {}): Promise<any> { // tslint:disable-line:no-any
-	const credentials = this.getCredentials('bitbucketApi');
-	if (credentials === undefined) {
-		throw new Error('No credentials got returned!');
-	}
+export async function bitbucketApiRequest(
+	this: IHookFunctions | IExecuteFunctions | ILoadOptionsFunctions,
+	method: string,
+	resource: string,
+
+	body: any = {},
+	qs: IDataObject = {},
+	uri?: string,
+	option: IDataObject = {},
+): Promise<any> {
+	const credentials = await this.getCredentials('bitbucketApi');
 	let options: OptionsWithUri = {
 		method,
 		auth: {
@@ -20,18 +27,18 @@ export async function bitbucketApiRequest(this: IHookFunctions | IExecuteFunctio
 		},
 		qs,
 		body,
-		uri: uri ||`https://api.bitbucket.org/2.0${resource}`,
+		uri: uri || `https://api.bitbucket.org/2.0${resource}`,
 		json: true,
 	};
 	options = Object.assign({}, options, option);
-	if (Object.keys(options.body).length === 0) {
+	if (Object.keys(options.body as IDataObject).length === 0) {
 		delete options.body;
 	}
 
 	try {
-		return await this.helpers.request!(options);
-	} catch (err) {
-		throw new Error('Bitbucket Error: ' + err.message);
+		return await this.helpers.request(options);
+	} catch (error) {
+		throw new NodeApiError(this.getNode(), error as JsonObject);
 	}
 }
 
@@ -39,8 +46,15 @@ export async function bitbucketApiRequest(this: IHookFunctions | IExecuteFunctio
  * Make an API request to paginated flow endpoint
  * and return all results
  */
-export async function bitbucketApiRequestAllItems(this: IHookFunctions | IExecuteFunctions| ILoadOptionsFunctions, propertyName: string, method: string, resource: string, body: any = {}, query: IDataObject = {}): Promise<any> { // tslint:disable-line:no-any
+export async function bitbucketApiRequestAllItems(
+	this: IHookFunctions | IExecuteFunctions | ILoadOptionsFunctions,
+	propertyName: string,
+	method: string,
+	resource: string,
 
+	body: any = {},
+	query: IDataObject = {},
+): Promise<any> {
 	const returnData: IDataObject[] = [];
 
 	let responseData;
@@ -50,10 +64,8 @@ export async function bitbucketApiRequestAllItems(this: IHookFunctions | IExecut
 	do {
 		responseData = await bitbucketApiRequest.call(this, method, resource, body, query, uri);
 		uri = responseData.next;
-		returnData.push.apply(returnData, responseData[propertyName]);
-	} while (
-		responseData.next !== undefined
-	);
+		returnData.push.apply(returnData, responseData[propertyName] as IDataObject[]);
+	} while (responseData.next !== undefined);
 
 	return returnData;
 }

@@ -1,16 +1,18 @@
-import {
-	ICredentialType,
-	NodePropertyTypes,
-} from 'n8n-workflow';
+import type { ICredentialType, INodeProperties } from 'n8n-workflow';
 
 export class NasaApi implements ICredentialType {
 	name = 'nasaApi';
+
 	displayName = 'NASA API';
-	properties = [
+
+	documentationUrl = 'nasa';
+
+	properties: INodeProperties[] = [
 		{
 			displayName: 'API Key',
 			name: 'api_key',
-			type: 'string' as NodePropertyTypes,
+			type: 'string',
+			typeOptions: { password: true },
 			default: '',
 		},
 	];

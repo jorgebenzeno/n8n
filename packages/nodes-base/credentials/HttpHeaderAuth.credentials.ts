@@ -1,26 +1,40 @@
-import {
-	ICredentialType,
-	NodePropertyTypes,
-} from 'n8n-workflow';
-
+import type { IAuthenticateGeneric, ICredentialType, INodeProperties } from 'n8n-workflow';
 
 export class HttpHeaderAuth implements ICredentialType {
 	name = 'httpHeaderAuth';
+
 	displayName = 'Header Auth';
+
 	documentationUrl = 'httpRequest';
-	properties = [
+
+	genericAuth = true;
+
+	icon = 'node:n8n-nodes-base.httpRequest';
+
+	properties: INodeProperties[] = [
 		{
 			displayName: 'Name',
 			name: 'name',
-			type: 'string' as NodePropertyTypes,
+			type: 'string',
 			default: '',
-
 		},
 		{
 			displayName: 'Value',
 			name: 'value',
-			type: 'string' as NodePropertyTypes,
+			type: 'string',
+			typeOptions: {
+				password: true,
+			},
 			default: '',
 		},
 	];
+
+	authenticate: IAuthenticateGeneric = {
+		type: 'generic',
+		properties: {
+			headers: {
+				'={{$credentials.name}}': '={{$credentials.value}}',
+			},
+		},
+	};
 }

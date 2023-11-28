@@ -1,6 +1,6 @@
-import { IHourlyRateDto, IMembershipDto } from './CommonDtos';
+import type { IHourlyRateDto, IMembershipDto } from './CommonDtos';
 
-enum EstimateEnum {
+const enum EstimateEnum {
 	AUTO = 'AUTO',
 	MANUAL = 'MANUAL',
 }
@@ -40,7 +40,7 @@ export interface IProjectRequest {
 	tasks: ITaskDto;
 }
 
-enum TaskStatusEnum {
+const enum TaskStatusEnum {
 	ACTIVE = 'ACTIVE',
 	DONE = 'DONE',
 }
@@ -52,4 +52,5 @@ export interface ITaskDto {
 	name: string;
 	projectId: string;
 	status: TaskStatusEnum;
+	'is-active': boolean;
 }

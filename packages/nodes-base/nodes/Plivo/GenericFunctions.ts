@@ -1,20 +1,11 @@
-import {
-	IExecuteFunctions,
-	IHookFunctions,
-} from 'n8n-core';
+import type { IExecuteFunctions, IHookFunctions, IDataObject, JsonObject } from 'n8n-workflow';
+import { NodeApiError } from 'n8n-workflow';
 
-import {
-	IDataObject,
-} from 'n8n-workflow';
+import type { OptionsWithUri } from 'request';
 
 /**
  * Make an API request to Plivo.
  *
- * @param {IHookFunctions} this
- * @param {string} method
- * @param {string} url
- * @param {object} body
- * @returns {Promise<any>}
  */
 export async function plivoApiRequest(
 	this: IHookFunctions | IExecuteFunctions,
@@ -23,14 +14,15 @@ export async function plivoApiRequest(
 	body: IDataObject = {},
 	qs: IDataObject = {},
 ) {
+	const credentials = (await this.getCredentials('plivoApi')) as {
+		authId: string;
+		authToken: string;
+	};
 
-	const credentials = this.getCredentials('plivoApi') as { authId: string, authToken: string };
-
-	if (!credentials) {
-		throw new Error('No credentials returned!');
-	}
-
-	const options = {
+	const options: OptionsWithUri = {
+		headers: {
+			'user-agent': 'plivo-n8n',
+		},
 		method,
 		form: body,
 		qs,
@@ -45,18 +37,6 @@ export async function plivoApiRequest(
 	try {
 		return await this.helpers.request(options);
 	} catch (error) {
-		if (error.statusCode === 401) {
-			throw new Error('Invalid Plivo credentials');
-		}
-		if (error?.response?.body?.error) {
-			let errorMessage = `Plivo error response [${error.statusCode}]: ${error.response.body.error}`;
-			if (error.response.body.more_info) {
-				errorMessage = `errorMessage (${error.response.body.more_info})`;
-			}
-
-			throw new Error(errorMessage);
-		}
-
-		throw error;
+		throw new NodeApiError(this.getNode(), error as JsonObject);
 	}
 }

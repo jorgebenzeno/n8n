@@ -1,7 +1,4 @@
-import {
-	ICredentialType,
-	NodePropertyTypes,
-} from 'n8n-workflow';
+import type { ICredentialType, INodeProperties } from 'n8n-workflow';
 
 const scopes = [
 	'https://www.googleapis.com/auth/gmail.labels',
@@ -12,19 +9,20 @@ const scopes = [
 	'https://www.googleapis.com/auth/gmail.compose',
 ];
 
-
 export class GmailOAuth2Api implements ICredentialType {
 	name = 'gmailOAuth2';
-	extends = [
-		'googleOAuth2Api',
-	];
+
+	extends = ['googleOAuth2Api'];
+
 	displayName = 'Gmail OAuth2 API';
-	documentationUrl = 'google';
-	properties = [
+
+	documentationUrl = 'google/oauth-single-service';
+
+	properties: INodeProperties[] = [
 		{
 			displayName: 'Scope',
 			name: 'scope',
-			type: 'hidden' as NodePropertyTypes,
+			type: 'hidden',
 			default: scopes.join(' '),
 		},
 	];

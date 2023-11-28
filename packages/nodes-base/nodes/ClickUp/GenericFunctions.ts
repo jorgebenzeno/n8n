@@ -1,21 +1,26 @@
-import {
-	OptionsWithUri,
-} from 'request';
+import type { OptionsWithUri } from 'request';
 
-import {
+import type {
+	IDataObject,
 	IExecuteFunctions,
-	IExecuteSingleFunctions,
 	IHookFunctions,
 	ILoadOptionsFunctions,
 	IWebhookFunctions,
-} from 'n8n-core';
-
-import {
-	IDataObject,
 	IOAuth2Options,
+	JsonObject,
 } from 'n8n-workflow';
+import { NodeApiError } from 'n8n-workflow';
 
-export async function clickupApiRequest(this: IHookFunctions | IExecuteFunctions | IExecuteSingleFunctions | ILoadOptionsFunctions | IWebhookFunctions, method: string, resource: string, body: any = {}, qs: IDataObject = {}, uri?: string, option: IDataObject = {}): Promise<any> { // tslint:disable-line:no-any
+export async function clickupApiRequest(
+	this: IHookFunctions | IExecuteFunctions | ILoadOptionsFunctions | IWebhookFunctions,
+	method: string,
+	resource: string,
+
+	body: any = {},
+	qs: IDataObject = {},
+	uri?: string,
+	_option: IDataObject = {},
+): Promise<any> {
 	const options: OptionsWithUri = {
 		headers: {
 			'Content-Type': 'application/json',
@@ -31,38 +36,34 @@ export async function clickupApiRequest(this: IHookFunctions | IExecuteFunctions
 		const authenticationMethod = this.getNodeParameter('authentication', 0) as string;
 
 		if (authenticationMethod === 'accessToken') {
-
-			const credentials = this.getCredentials('clickUpApi');
-
-			if (credentials === undefined) {
-				throw new Error('No credentials got returned!');
-			}
-
-			options.headers!['Authorization'] = credentials.accessToken;
-			return await this.helpers.request!(options);
-
+			return await this.helpers.requestWithAuthentication.call(this, 'clickUpApi', options);
 		} else {
-
 			const oAuth2Options: IOAuth2Options = {
 				keepBearer: false,
 				tokenType: 'Bearer',
 			};
 			// @ts-ignore
-			return await this.helpers.requestOAuth2!.call(this, 'clickUpOAuth2Api', options, oAuth2Options);
+			return await this.helpers.requestOAuth2.call(
+				this,
+				'clickUpOAuth2Api',
+				options,
+				oAuth2Options,
+			);
 		}
-
 	} catch (error) {
-		let errorMessage = error;
-		if (error.err) {
-			errorMessage = error.err;
-		}
-		throw new Error('ClickUp Error: ' + errorMessage);
+		throw new NodeApiError(this.getNode(), error as JsonObject);
 	}
-
 }
 
-export async function clickupApiRequestAllItems(this: IHookFunctions | IExecuteFunctions | ILoadOptionsFunctions, propertyName: string, method: string, resource: string, body: any = {}, query: IDataObject = {}): Promise<any> { // tslint:disable-line:no-any
+export async function clickupApiRequestAllItems(
+	this: IHookFunctions | IExecuteFunctions | ILoadOptionsFunctions,
+	propertyName: string,
+	method: string,
+	resource: string,
 
+	body: any = {},
+	query: IDataObject = {},
+): Promise<any> {
 	const returnData: IDataObject[] = [];
 
 	let responseData;
@@ -70,19 +71,17 @@ export async function clickupApiRequestAllItems(this: IHookFunctions | IExecuteF
 
 	do {
 		responseData = await clickupApiRequest.call(this, method, resource, body, query);
-		returnData.push.apply(returnData, responseData[propertyName]);
+		returnData.push.apply(returnData, responseData[propertyName] as IDataObject[]);
 		query.page++;
-		if (query.limit && query.limit <= returnData.length) {
+		const limit = query.limit as number | undefined;
+		if (limit && limit <= returnData.length) {
 			return returnData;
 		}
-	} while (
-		responseData[propertyName] &&
-		responseData[propertyName].length !== 0
-	);
+	} while (responseData[propertyName] && responseData[propertyName].length !== 0);
 	return returnData;
 }
 
-export function validateJSON(json: string | undefined): any { // tslint:disable-line:no-any
+export function validateJSON(json: string | undefined): any {
 	let result;
 	try {
 		result = JSON.parse(json!);

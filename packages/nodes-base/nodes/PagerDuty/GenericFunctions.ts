@@ -1,24 +1,27 @@
-import {
-	OptionsWithUri,
- } from 'request';
+import type { OptionsWithUri } from 'request';
 
-import {
+import type {
+	JsonObject,
+	IDataObject,
 	IExecuteFunctions,
 	ILoadOptionsFunctions,
-} from 'n8n-core';
-
-import {
-	IDataObject,
 	IHookFunctions,
 	IWebhookFunctions,
 } from 'n8n-workflow';
+import { NodeApiError } from 'n8n-workflow';
 
-import {
-	snakeCase,
-} from 'change-case';
+import { snakeCase } from 'change-case';
 
-export async function pagerDutyApiRequest(this: IExecuteFunctions | IWebhookFunctions | IHookFunctions | ILoadOptionsFunctions, method: string, resource: string, body: any = {}, query: IDataObject = {}, uri?: string, headers: IDataObject = {}): Promise<any> { // tslint:disable-line:no-any
+export async function pagerDutyApiRequest(
+	this: IExecuteFunctions | IWebhookFunctions | IHookFunctions | ILoadOptionsFunctions,
+	method: string,
+	resource: string,
 
+	body: any = {},
+	query: IDataObject = {},
+	uri?: string,
+	headers: IDataObject = {},
+): Promise<any> {
 	const authenticationMethod = this.getNodeParameter('authentication', 0);
 
 	const options: OptionsWithUri = {
@@ -35,7 +38,7 @@ export async function pagerDutyApiRequest(this: IExecuteFunctions | IWebhookFunc
 		},
 	};
 
-	if (!Object.keys(body).length) {
+	if (!Object.keys(body as IDataObject).length) {
 		delete options.form;
 	}
 	if (!Object.keys(query).length) {
@@ -46,29 +49,28 @@ export async function pagerDutyApiRequest(this: IExecuteFunctions | IWebhookFunc
 
 	try {
 		if (authenticationMethod === 'apiToken') {
-			const credentials = this.getCredentials('pagerDutyApi');
+			const credentials = await this.getCredentials('pagerDutyApi');
 
-			if (credentials === undefined) {
-				throw new Error('No credentials got returned!');
-			}
+			options.headers.Authorization = `Token token=${credentials.apiToken}`;
 
-			options.headers!['Authorization'] = `Token token=${credentials.apiToken}`;
-
-			return await this.helpers.request!(options);
+			return await this.helpers.request(options);
 		} else {
-			return await this.helpers.requestOAuth2!.call(this, 'pagerDutyOAuth2Api', options);
+			return await this.helpers.requestOAuth2.call(this, 'pagerDutyOAuth2Api', options);
 		}
 	} catch (error) {
-		if (error.response && error.response.body && error.response.body.error && error.response.body.error.errors) {
-			// Try to return the error prettier
-				//@ts-ignore
-				throw new Error(`PagerDuty error response [${error.statusCode}]: ${error.response.body.error.errors.join(' | ')}`);
-		}
-		throw error;
+		throw new NodeApiError(this.getNode(), error as JsonObject);
 	}
 }
-export async function pagerDutyApiRequestAllItems(this: IExecuteFunctions | ILoadOptionsFunctions, propertyName: string, method: string, endpoint: string, body: any = {}, query: IDataObject = {}): Promise<any> { // tslint:disable-line:no-any
 
+export async function pagerDutyApiRequestAllItems(
+	this: IExecuteFunctions | ILoadOptionsFunctions,
+	propertyName: string,
+	method: string,
+	endpoint: string,
+
+	body: any = {},
+	query: IDataObject = {},
+): Promise<any> {
 	const returnData: IDataObject[] = [];
 
 	let responseData;
@@ -78,15 +80,13 @@ export async function pagerDutyApiRequestAllItems(this: IExecuteFunctions | ILoa
 	do {
 		responseData = await pagerDutyApiRequest.call(this, method, endpoint, body, query);
 		query.offset++;
-		returnData.push.apply(returnData, responseData[propertyName]);
-	} while (
-		responseData.more
-	);
+		returnData.push.apply(returnData, responseData[propertyName] as IDataObject[]);
+	} while (responseData.more);
 
 	return returnData;
 }
 
-export function keysToSnakeCase(elements: IDataObject[] | IDataObject) : IDataObject[] {
+export function keysToSnakeCase(elements: IDataObject[] | IDataObject): IDataObject[] {
 	if (!Array.isArray(elements)) {
 		elements = [elements];
 	}

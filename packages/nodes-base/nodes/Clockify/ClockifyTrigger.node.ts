@@ -1,7 +1,7 @@
-import * as moment from 'moment-timezone';
+import moment from 'moment-timezone';
 
-import { IPollFunctions } from 'n8n-core';
-import {
+import type {
+	IPollFunctions,
 	IDataObject,
 	ILoadOptionsFunctions,
 	INodeExecutionData,
@@ -10,26 +10,22 @@ import {
 	INodeTypeDescription,
 } from 'n8n-workflow';
 
-import {
-	clockifyApiRequest,
-} from './GenericFunctions';
+import { clockifyApiRequest } from './GenericFunctions';
 
 import { EntryTypeEnum } from './EntryTypeEnum';
-import { IUserDto } from './UserDtos';
-import { IWorkspaceDto } from './WorkpaceInterfaces';
-
+import type { IUserDto } from './UserDtos';
+import type { IWorkspaceDto } from './WorkpaceInterfaces';
 
 export class ClockifyTrigger implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Clockify Trigger',
-		icon: 'file:clockify.png',
+		icon: 'file:clockify.svg',
 		name: 'clockifyTrigger',
 		group: ['trigger'],
 		version: 1,
-		description: 'Watches Clockify For Events',
+		description: 'Listens to Clockify events',
 		defaults: {
 			name: 'Clockify Trigger',
-			color: '#000000',
 		},
 		inputs: [],
 		outputs: ['main'],
@@ -42,15 +38,18 @@ export class ClockifyTrigger implements INodeType {
 		polling: true,
 		properties: [
 			{
-				displayName: 'Workspace',
+				displayName: 'Workspace Name or ID',
 				name: 'workspaceId',
 				type: 'options',
+				description:
+					'Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code-examples/expressions/">expression</a>',
 				typeOptions: {
 					loadOptionsMethod: 'listWorkspaces',
 				},
 				required: true,
 				default: '',
 			},
+			// eslint-disable-next-line n8n-nodes-base/node-param-default-missing
 			{
 				displayName: 'Trigger',
 				name: 'watchField',
@@ -71,14 +70,17 @@ export class ClockifyTrigger implements INodeType {
 		loadOptions: {
 			async listWorkspaces(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
 				const rtv: INodePropertyOptions[] = [];
-				const workspaces: IWorkspaceDto[] = await clockifyApiRequest.call(this, 'GET', 'workspaces');
+				const workspaces: IWorkspaceDto[] = await clockifyApiRequest.call(
+					this,
+					'GET',
+					'workspaces',
+				);
 				if (undefined !== workspaces) {
-					workspaces.forEach(value => {
-						rtv.push(
-							{
-								name: value.name,
-								value: value.id,
-							});
+					workspaces.forEach((value) => {
+						rtv.push({
+							name: value.name,
+							value: value.id,
+						});
 					});
 				}
 				return rtv;
@@ -117,8 +119,8 @@ export class ClockifyTrigger implements INodeType {
 		webhookData.lastTimeChecked = qs.end;
 
 		if (Array.isArray(result) && result.length !== 0) {
-			result = [this.helpers.returnJsonArray(result)];
+			return [this.helpers.returnJsonArray(result)];
 		}
-		return result;
+		return null;
 	}
 }

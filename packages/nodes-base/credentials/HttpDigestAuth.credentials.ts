@@ -1,25 +1,27 @@
-import {
-	ICredentialType,
-	NodePropertyTypes,
-} from 'n8n-workflow';
-
+import type { ICredentialType, INodeProperties } from 'n8n-workflow';
 
 export class HttpDigestAuth implements ICredentialType {
 	name = 'httpDigestAuth';
+
 	displayName = 'Digest Auth';
+
 	documentationUrl = 'httpRequest';
-	properties = [
+
+	genericAuth = true;
+
+	icon = 'node:n8n-nodes-base.httpRequest';
+
+	properties: INodeProperties[] = [
 		{
 			displayName: 'User',
 			name: 'user',
-			type: 'string' as NodePropertyTypes,
+			type: 'string',
 			default: '',
-
 		},
 		{
 			displayName: 'Password',
 			name: 'password',
-			type: 'string' as NodePropertyTypes,
+			type: 'string',
 			typeOptions: {
 				password: true,
 			},

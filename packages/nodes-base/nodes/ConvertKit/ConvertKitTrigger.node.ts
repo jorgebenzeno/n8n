@@ -1,9 +1,6 @@
-import {
+import type {
 	IHookFunctions,
 	IWebhookFunctions,
-} from 'n8n-core';
-
-import {
 	IDataObject,
 	ILoadOptionsFunctions,
 	INodePropertyOptions,
@@ -12,26 +9,20 @@ import {
 	IWebhookResponseData,
 } from 'n8n-workflow';
 
-import {
-	convertKitApiRequest,
-} from './GenericFunctions';
-
-import {
-	snakeCase,
-} from 'change-case';
+import { snakeCase } from 'change-case';
+import { convertKitApiRequest } from './GenericFunctions';
 
 export class ConvertKitTrigger implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'ConvertKit Trigger',
 		name: 'convertKitTrigger',
-		icon: 'file:convertKit.png',
+		icon: 'file:convertKit.svg',
 		subtitle: '={{$parameter["event"]}}',
 		group: ['trigger'],
 		version: 1,
 		description: 'Handle ConvertKit events via webhooks',
 		defaults: {
 			name: 'ConvertKit Trigger',
-			color: '#fb6970',
 		},
 		inputs: [],
 		outputs: ['main'],
@@ -56,7 +47,7 @@ export class ConvertKitTrigger implements INodeType {
 				type: 'options',
 				required: true,
 				default: '',
-				description: 'The events that can trigger the webhook and whether they are enabled.',
+				description: 'The events that can trigger the webhook and whether they are enabled',
 				options: [
 					{
 						name: 'Form Subscribe',
@@ -101,9 +92,11 @@ export class ConvertKitTrigger implements INodeType {
 				],
 			},
 			{
-				displayName: 'Form ID',
+				displayName: 'Form Name or ID',
 				name: 'formId',
 				type: 'options',
+				description:
+					'Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code-examples/expressions/">expression</a>',
 				typeOptions: {
 					loadOptionsMethod: 'getForms',
 				},
@@ -111,16 +104,16 @@ export class ConvertKitTrigger implements INodeType {
 				default: '',
 				displayOptions: {
 					show: {
-						event: [
-							'formSubscribe',
-						],
+						event: ['formSubscribe'],
 					},
 				},
 			},
 			{
-				displayName: 'Sequence ID',
+				displayName: 'Sequence Name or ID',
 				name: 'courseId',
 				type: 'options',
+				description:
+					'Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code-examples/expressions/">expression</a>',
 				typeOptions: {
 					loadOptionsMethod: 'getSequences',
 				},
@@ -128,10 +121,7 @@ export class ConvertKitTrigger implements INodeType {
 				default: '',
 				displayOptions: {
 					show: {
-						event: [
-							'courseSubscribe',
-							'courseComplete',
-						],
+						event: ['courseSubscribe', 'courseComplete'],
 					},
 				},
 			},
@@ -144,9 +134,7 @@ export class ConvertKitTrigger implements INodeType {
 				description: 'The URL of the initiating link',
 				displayOptions: {
 					show: {
-						event: [
-							'linkClick',
-						],
+						event: ['linkClick'],
 					},
 				},
 			},
@@ -158,16 +146,16 @@ export class ConvertKitTrigger implements INodeType {
 				default: '',
 				displayOptions: {
 					show: {
-						event: [
-							'productPurchase',
-						],
+						event: ['productPurchase'],
 					},
 				},
 			},
 			{
-				displayName: 'Tag ID',
+				displayName: 'Tag Name or ID',
 				name: 'tagId',
 				type: 'options',
+				description:
+					'Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code-examples/expressions/">expression</a>',
 				typeOptions: {
 					loadOptionsMethod: 'getTags',
 				},
@@ -175,10 +163,7 @@ export class ConvertKitTrigger implements INodeType {
 				default: '',
 				displayOptions: {
 					show: {
-						event: [
-							'tagAdd',
-							'tagRemove',
-						],
+						event: ['tagAdd', 'tagRemove'],
 					},
 				},
 			},
@@ -187,16 +172,14 @@ export class ConvertKitTrigger implements INodeType {
 
 	methods = {
 		loadOptions: {
-			// Get all the tags to display them to user so that he can
+			// Get all the tags to display them to user so that they can
 			// select them easily
 			async getTags(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
-
 				const returnData: INodePropertyOptions[] = [];
 
 				const { tags } = await convertKitApiRequest.call(this, 'GET', '/tags');
 
 				for (const tag of tags) {
-
 					const tagName = tag.name;
 
 					const tagId = tag.id;
@@ -209,16 +192,14 @@ export class ConvertKitTrigger implements INodeType {
 
 				return returnData;
 			},
-			// Get all the forms to display them to user so that he can
+			// Get all the forms to display them to user so that they can
 			// select them easily
 			async getForms(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
-
 				const returnData: INodePropertyOptions[] = [];
 
 				const { forms } = await convertKitApiRequest.call(this, 'GET', '/forms');
 
 				for (const form of forms) {
-
 					const formName = form.name;
 
 					const formId = form.id;
@@ -232,16 +213,14 @@ export class ConvertKitTrigger implements INodeType {
 				return returnData;
 			},
 
-			// Get all the sequences to display them to user so that he can
+			// Get all the sequences to display them to user so that they can
 			// select them easily
 			async getSequences(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
-
 				const returnData: INodePropertyOptions[] = [];
 
 				const { courses } = await convertKitApiRequest.call(this, 'GET', '/sequences');
 
 				for (const course of courses) {
-
 					const courseName = course.name;
 
 					const courseId = course.id;
@@ -257,11 +236,9 @@ export class ConvertKitTrigger implements INodeType {
 		},
 	};
 
-	// @ts-ignore (because of request)
 	webhookMethods = {
 		default: {
 			async checkExists(this: IHookFunctions): Promise<boolean> {
-
 				const webhookData = this.getWorkflowStaticData('node');
 
 				// THe API does not have an endpoint to list all webhooks
@@ -274,7 +251,6 @@ export class ConvertKitTrigger implements INodeType {
 			},
 
 			async create(this: IHookFunctions): Promise<boolean> {
-
 				const webhookUrl = this.getNodeWebhookUrl('default');
 
 				let event = this.getNodeParameter('event', 0) as string;
@@ -296,27 +272,27 @@ export class ConvertKitTrigger implements INodeType {
 
 				if (event === 'subscriber.form_subscribe') {
 					//@ts-ignore
-					body.event['form_id'] = this.getNodeParameter('formId', 0);
+					body.event.form_id = this.getNodeParameter('formId', 0);
 				}
 
 				if (event === 'subscriber.course_subscribe' || event === 'subscriber.course_complete') {
 					//@ts-ignore
-					body.event['sequence_id'] = this.getNodeParameter('courseId', 0);
+					body.event.sequence_id = this.getNodeParameter('courseId', 0);
 				}
 
 				if (event === 'subscriber.link_click') {
 					//@ts-ignore
-					body.event['initiator_value'] = this.getNodeParameter('link', 0);
+					body.event.initiator_value = this.getNodeParameter('link', 0);
 				}
 
 				if (event === 'subscriber.product_purchase') {
 					//@ts-ignore
-					body.event['product_id'] = this.getNodeParameter('productId', 0);
+					body.event.product_id = this.getNodeParameter('productId', 0);
 				}
 
 				if (event === 'subscriber.tag_add' || event === 'subscriber.tag_remove') {
 					//@ts-ignore
-					body.event['tag_id'] = this.getNodeParameter('tagId', 0);
+					body.event.tag_id = this.getNodeParameter('tagId', 0);
 				}
 
 				const webhook = await convertKitApiRequest.call(this, 'POST', endpoint, body);
@@ -333,11 +309,9 @@ export class ConvertKitTrigger implements INodeType {
 			},
 
 			async delete(this: IHookFunctions): Promise<boolean> {
-
 				const webhookData = this.getWorkflowStaticData('node');
 
 				if (webhookData.webhookId !== undefined) {
-
 					const endpoint = `/automations/hooks/${webhookData.webhookId}`;
 
 					try {
@@ -359,9 +333,7 @@ export class ConvertKitTrigger implements INodeType {
 		returnData.push(this.getBodyData());
 
 		return {
-			workflowData: [
-				this.helpers.returnJsonArray(returnData),
-			],
+			workflowData: [this.helpers.returnJsonArray(returnData)],
 		};
 	}
 }

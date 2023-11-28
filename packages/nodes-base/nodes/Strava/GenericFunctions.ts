@@ -1,21 +1,24 @@
-import {
-	OptionsWithUri,
-} from 'request';
+import type { OptionsWithUri } from 'request';
 
-import {
+import type {
+	IDataObject,
 	IExecuteFunctions,
-	IExecuteSingleFunctions,
 	IHookFunctions,
 	ILoadOptionsFunctions,
 	IWebhookFunctions,
-} from 'n8n-core';
-
-import {
-	IDataObject,
+	JsonObject,
 } from 'n8n-workflow';
+import { NodeApiError } from 'n8n-workflow';
 
-export async function stravaApiRequest(this: IExecuteFunctions | IExecuteSingleFunctions | ILoadOptionsFunctions | IHookFunctions | IWebhookFunctions, method: string, resource: string, body: any = {}, qs: IDataObject = {}, uri?: string, headers: IDataObject = {}): Promise<any> { // tslint:disable-line:no-any
-
+export async function stravaApiRequest(
+	this: IExecuteFunctions | ILoadOptionsFunctions | IHookFunctions | IWebhookFunctions,
+	method: string,
+	resource: string,
+	body: IDataObject = {},
+	qs: IDataObject = {},
+	uri?: string,
+	headers: IDataObject = {},
+) {
 	const options: OptionsWithUri = {
 		method,
 		form: body,
@@ -32,7 +35,7 @@ export async function stravaApiRequest(this: IExecuteFunctions | IExecuteSingleF
 		}
 
 		if (this.getNode().type.includes('Trigger') && resource.includes('/push_subscriptions')) {
-			const credentials = this.getCredentials('stravaOAuth2Api') as IDataObject;
+			const credentials = await this.getCredentials('stravaOAuth2Api');
 			if (method === 'GET') {
 				qs.client_id = credentials.clientId;
 				qs.client_secret = credentials.clientSecret;
@@ -40,37 +43,26 @@ export async function stravaApiRequest(this: IExecuteFunctions | IExecuteSingleF
 				body.client_id = credentials.clientId;
 				body.client_secret = credentials.clientSecret;
 			}
-			//@ts-ignore
-			return this.helpers?.request(options);
 
+			return await this.helpers?.request(options);
 		} else {
-			//@ts-ignore
-			return await this.helpers.requestOAuth2.call(this, 'stravaOAuth2Api', options, { includeCredentialsOnRefreshOnBody: true });
+			return await this.helpers.requestOAuth2.call(this, 'stravaOAuth2Api', options, {
+				includeCredentialsOnRefreshOnBody: true,
+			});
 		}
 	} catch (error) {
-
-		if (error.statusCode === 402) {
-			throw new Error(
-				`Strava error response [${error.statusCode}]: Payment Required`,
-			);
-		}
-
-		if (error.response && error.response.body && error.response.body.errors) {
-
-			let errors = error.response.body.errors;
-
-			errors = errors.map((e: IDataObject) => `${e.code} -> ${e.field}`);
-			// Try to return the error prettier
-			throw new Error(
-				`Strava error response [${error.statusCode}]: ${errors.join('|')}`,
-			);
-		}
-		throw error;
+		throw new NodeApiError(this.getNode(), error as JsonObject);
 	}
 }
 
-export async function stravaApiRequestAllItems(this: IHookFunctions | ILoadOptionsFunctions | IExecuteFunctions, method: string, resource: string, body: any = {}, query: IDataObject = {}): Promise<any> { // tslint:disable-line:no-any
+export async function stravaApiRequestAllItems(
+	this: IHookFunctions | ILoadOptionsFunctions | IExecuteFunctions,
+	method: string,
+	resource: string,
 
+	body: IDataObject = {},
+	query: IDataObject = {},
+) {
 	const returnData: IDataObject[] = [];
 
 	let responseData;
@@ -82,10 +74,8 @@ export async function stravaApiRequestAllItems(this: IHookFunctions | ILoadOptio
 	do {
 		responseData = await stravaApiRequest.call(this, method, resource, body, query);
 		query.page++;
-		returnData.push.apply(returnData, responseData);
-	} while (
-		responseData.length !== 0
-	);
+		returnData.push.apply(returnData, responseData as IDataObject[]);
+	} while (responseData.length !== 0);
 
 	return returnData;
 }

@@ -1,20 +1,23 @@
-import {
-	OptionsWithUri,
-} from 'request';
+import type { OptionsWithUri } from 'request';
 
-import {
+import type {
 	IExecuteFunctions,
-	IExecuteSingleFunctions,
 	ILoadOptionsFunctions,
-} from 'n8n-core';
-
-import {
 	IDataObject,
+	JsonObject,
 } from 'n8n-workflow';
+import { NodeApiError } from 'n8n-workflow';
 
-export async function vonageApiRequest(this: IExecuteFunctions | IExecuteSingleFunctions | ILoadOptionsFunctions, method: string, path: string, body: any = {}, qs: IDataObject = {}, option = {}): Promise<any> { // tslint:disable-line:no-any
+export async function vonageApiRequest(
+	this: IExecuteFunctions | ILoadOptionsFunctions,
+	method: string,
+	path: string,
 
-	const credentials = this.getCredentials('vonageApi') as IDataObject;
+	body: any = {},
+	qs: IDataObject = {},
+	_option = {},
+): Promise<any> {
+	const credentials = await this.getCredentials('vonageApi');
 
 	body.api_key = credentials.apiKey as string;
 
@@ -29,22 +32,11 @@ export async function vonageApiRequest(this: IExecuteFunctions | IExecuteSingleF
 	};
 
 	try {
-		if (Object.keys(body).length === 0) {
+		if (Object.keys(body as IDataObject).length === 0) {
 			delete options.body;
 		}
-		//@ts-ignore
 		return await this.helpers.request.call(this, options);
 	} catch (error) {
-		if (error.response && error.response.body && error.response.body.error) {
-
-			let errors = error.response.body.error.errors;
-
-			errors = errors.map((e: IDataObject) => e.message);
-			// Try to return the error prettier
-			throw new Error(
-				`Vonage error response [${error.statusCode}]: ${errors.join('|')}`,
-			);
-		}
-		throw error;
+		throw new NodeApiError(this.getNode(), error as JsonObject);
 	}
 }

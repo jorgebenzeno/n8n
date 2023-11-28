@@ -1,100 +1,139 @@
-import {
+/* eslint-disable @typescript-eslint/no-unnecessary-type-assertion */
+
+import { Container, Service } from 'typedi';
+import type {
+	IDeferredPromise,
+	IExecuteResponsePromiseData,
 	IRun,
+	ExecutionStatus,
 } from 'n8n-workflow';
+import { WorkflowOperationError, createDeferredPromise } from 'n8n-workflow';
 
-import {
-	createDeferredPromise,
-} from 'n8n-core';
-
-import {
-	Db,
+import type { ChildProcess } from 'child_process';
+import type PCancelable from 'p-cancelable';
+import type {
+	ExecutionPayload,
 	IExecutingWorkflowData,
 	IExecutionDb,
-	IExecutionFlattedDb,
 	IExecutionsCurrentSummary,
 	IWorkflowExecutionDataProcess,
-	ResponseHelper,
-	WorkflowHelpers,
-} from '.';
+} from '@/Interfaces';
+import { isWorkflowIdValid } from '@/utils';
+import { ExecutionRepository } from '@db/repositories/execution.repository';
+import { Logger } from '@/Logger';
 
-import { ChildProcess } from 'child_process';
-import * as PCancelable from 'p-cancelable';
-import { ObjectID } from 'typeorm';
-
-
+@Service()
 export class ActiveExecutions {
 	private activeExecutions: {
 		[index: string]: IExecutingWorkflowData;
 	} = {};
 
+	constructor(private readonly logger: Logger) {}
 
 	/**
 	 * Add a new active execution
-	 *
-	 * @param {ChildProcess} process
-	 * @param {IWorkflowExecutionDataProcess} executionData
-	 * @returns {string}
-	 * @memberof ActiveExecutions
 	 */
-	async add(executionData: IWorkflowExecutionDataProcess, process?: ChildProcess): Promise<string> {
+	async add(
+		executionData: IWorkflowExecutionDataProcess,
+		process?: ChildProcess,
+		executionId?: string,
+	): Promise<string> {
+		let executionStatus: ExecutionStatus = executionId ? 'running' : 'new';
+		if (executionId === undefined) {
+			// Is a new execution so save in DB
 
-		const fullExecutionData: IExecutionDb = {
-			data: executionData.executionData!,
-			mode: executionData.executionMode,
-			finished: false,
-			startedAt: new Date(),
-			workflowData: executionData.workflowData,
-		};
+			const fullExecutionData: ExecutionPayload = {
+				data: executionData.executionData!,
+				mode: executionData.executionMode,
+				finished: false,
+				startedAt: new Date(),
+				workflowData: executionData.workflowData,
+				status: executionStatus,
+			};
 
-		if (executionData.retryOf !== undefined) {
-			fullExecutionData.retryOf = executionData.retryOf.toString();
+			if (executionData.retryOf !== undefined) {
+				fullExecutionData.retryOf = executionData.retryOf.toString();
+			}
+
+			const workflowId = executionData.workflowData.id;
+			if (workflowId !== undefined && isWorkflowIdValid(workflowId)) {
+				fullExecutionData.workflowId = workflowId;
+			}
+
+			const executionResult =
+				await Container.get(ExecutionRepository).createNewExecution(fullExecutionData);
+			executionId = executionResult.id;
+			if (executionId === undefined) {
+				throw new Error('There was an issue assigning an execution id to the execution');
+			}
+			executionStatus = 'running';
+		} else {
+			// Is an existing execution we want to finish so update in DB
+
+			const execution: Pick<IExecutionDb, 'id' | 'data' | 'waitTill' | 'status'> = {
+				id: executionId,
+				data: executionData.executionData!,
+				waitTill: null,
+				status: executionStatus,
+			};
+
+			await Container.get(ExecutionRepository).updateExistingExecution(executionId, execution);
 		}
-
-		if (executionData.workflowData.id !== undefined && WorkflowHelpers.isWorkflowIdValid(executionData.workflowData.id.toString()) === true) {
-			fullExecutionData.workflowId = executionData.workflowData.id.toString();
-		}
-		
-		const execution = ResponseHelper.flattenExecutionData(fullExecutionData);
-
-		// Save the Execution in DB
-		const executionResult = await Db.collections.Execution!.save(execution as IExecutionFlattedDb);
-
-		const executionId = typeof executionResult.id === "object" ? executionResult.id.toString() : executionResult.id + "";
 
 		this.activeExecutions[executionId] = {
 			executionData,
 			process,
 			startedAt: new Date(),
 			postExecutePromises: [],
+			status: executionStatus,
 		};
 
 		return executionId;
 	}
 
-
 	/**
 	 * Attaches an execution
 	 *
-	 * @param {string} executionId
-	 * @param {PCancelable<IRun>} workflowExecution
-	 * @memberof ActiveExecutions
 	 */
+
 	attachWorkflowExecution(executionId: string, workflowExecution: PCancelable<IRun>) {
 		if (this.activeExecutions[executionId] === undefined) {
-			throw new Error(`No active execution with id "${executionId}" got found to attach to workflowExecution to!`);
+			throw new Error(
+				`No active execution with id "${executionId}" got found to attach to workflowExecution to!`,
+			);
 		}
 
 		this.activeExecutions[executionId].workflowExecution = workflowExecution;
 	}
 
+	attachResponsePromise(
+		executionId: string,
+		responsePromise: IDeferredPromise<IExecuteResponsePromiseData>,
+	): void {
+		if (this.activeExecutions[executionId] === undefined) {
+			throw new Error(
+				`No active execution with id "${executionId}" got found to attach to workflowExecution to!`,
+			);
+		}
+
+		this.activeExecutions[executionId].responsePromise = responsePromise;
+	}
+
+	resolveResponsePromise(executionId: string, response: IExecuteResponsePromiseData): void {
+		if (this.activeExecutions[executionId] === undefined) {
+			return;
+		}
+
+		this.activeExecutions[executionId].responsePromise?.resolve(response);
+	}
+
+	getPostExecutePromiseCount(executionId: string): number {
+		return this.activeExecutions[executionId]?.postExecutePromises.length ?? 0;
+	}
 
 	/**
 	 * Remove an active execution
 	 *
-	 * @param {string} executionId
-	 * @param {IRun} fullRunData
-	 * @returns {void}
-	 * @memberof ActiveExecutions
 	 */
 	remove(executionId: string, fullRunData?: IRun): void {
 		if (this.activeExecutions[executionId] === undefined) {
@@ -102,6 +141,7 @@ export class ActiveExecutions {
 		}
 
 		// Resolve all the waiting promises
+
 		for (const promise of this.activeExecutions[executionId].postExecutePromises) {
 			promise.resolve(fullRunData);
 		}
@@ -110,14 +150,11 @@ export class ActiveExecutions {
 		delete this.activeExecutions[executionId];
 	}
 
-
 	/**
 	 * Forces an execution to stop
 	 *
 	 * @param {string} executionId The id of the execution to stop
 	 * @param {string} timeout String 'timeout' given if stop due to timeout
-	 * @returns {(Promise<IRun | undefined>)}
-	 * @memberof ActiveExecutions
 	 */
 	async stopExecution(executionId: string, timeout?: string): Promise<IRun | undefined> {
 		if (this.activeExecutions[executionId] === undefined) {
@@ -131,9 +168,9 @@ export class ActiveExecutions {
 			// Workflow is running in subprocess
 			if (this.activeExecutions[executionId].process!.connected) {
 				setTimeout(() => {
-				// execute on next event loop tick;
+					// execute on next event loop tick;
 					this.activeExecutions[executionId].process!.send({
-						type: timeout ? timeout : 'stopExecution',
+						type: timeout || 'stopExecution',
 					});
 				}, 1);
 			}
@@ -145,64 +182,65 @@ export class ActiveExecutions {
 		return this.getPostExecutePromise(executionId);
 	}
 
-
 	/**
 	 * Returns a promise which will resolve with the data of the execution
 	 * with the given id
 	 *
 	 * @param {string} executionId The id of the execution to wait for
-	 * @returns {Promise<IRun>}
-	 * @memberof ActiveExecutions
 	 */
 	async getPostExecutePromise(executionId: string): Promise<IRun | undefined> {
+		if (this.activeExecutions[executionId] === undefined) {
+			throw new WorkflowOperationError(`There is no active execution with id "${executionId}".`);
+		}
+
 		// Create the promise which will be resolved when the execution finished
 		const waitPromise = await createDeferredPromise<IRun | undefined>();
-
-		if (this.activeExecutions[executionId] === undefined) {
-			throw new Error(`There is no active execution with id "${executionId}".`);
-		}
 
 		this.activeExecutions[executionId].postExecutePromises.push(waitPromise);
 
 		return waitPromise.promise();
 	}
 
-
 	/**
 	 * Returns all the currently active executions
 	 *
-	 * @returns {IExecutionsCurrentSummary[]}
-	 * @memberof ActiveExecutions
 	 */
 	getActiveExecutions(): IExecutionsCurrentSummary[] {
 		const returnData: IExecutionsCurrentSummary[] = [];
 
 		let data;
+
 		for (const id of Object.keys(this.activeExecutions)) {
 			data = this.activeExecutions[id];
-			returnData.push(
-				{
-					id,
-					retryOf: data.executionData.retryOf as string | undefined,
-					startedAt: data.startedAt,
-					mode: data.executionData.executionMode,
-					workflowId: data.executionData.workflowData.id! as string,
-				}
-			);
+			returnData.push({
+				id,
+				retryOf: data.executionData.retryOf as string | undefined,
+				startedAt: data.startedAt,
+				mode: data.executionData.executionMode,
+				workflowId: data.executionData.workflowData.id! as string,
+				status: data.status,
+			});
 		}
 
 		return returnData;
 	}
-}
 
+	async setStatus(executionId: string, status: ExecutionStatus): Promise<void> {
+		if (this.activeExecutions[executionId] === undefined) {
+			this.logger.debug(
+				`There is no active execution with id "${executionId}", can't update status to ${status}.`,
+			);
+			return;
+		}
 
-
-let activeExecutionsInstance: ActiveExecutions | undefined;
-
-export function getInstance(): ActiveExecutions {
-	if (activeExecutionsInstance === undefined) {
-		activeExecutionsInstance = new ActiveExecutions();
+		this.activeExecutions[executionId].status = status;
 	}
 
-	return activeExecutionsInstance;
+	getStatus(executionId: string): ExecutionStatus {
+		if (this.activeExecutions[executionId] === undefined) {
+			return 'unknown';
+		}
+
+		return this.activeExecutions[executionId].status;
+	}
 }

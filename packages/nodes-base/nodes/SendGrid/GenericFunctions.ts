@@ -1,27 +1,24 @@
-import {
-	OptionsWithUri,
-} from 'request';
+import type { OptionsWithUri } from 'request';
 
-import {
+import type {
+	IDataObject,
 	IExecuteFunctions,
-	IExecuteSingleFunctions,
 	IHookFunctions,
 	ILoadOptionsFunctions,
-} from 'n8n-core';
-
-import {
-	IDataObject,
 } from 'n8n-workflow';
 
-export async function sendGridApiRequest(this: IHookFunctions | IExecuteFunctions | IExecuteSingleFunctions | ILoadOptionsFunctions, endpoint: string, method: string, body: any = {}, qs: IDataObject = {}, option: IDataObject = {}): Promise<any> { // tslint:disable-line:no-any
-	const credentials = this.getCredentials('sendGridApi') as IDataObject;
+export async function sendGridApiRequest(
+	this: IHookFunctions | IExecuteFunctions | ILoadOptionsFunctions,
+	endpoint: string,
+	method: string,
 
+	body: any = {},
+	qs: IDataObject = {},
+	option: IDataObject = {},
+): Promise<any> {
 	const host = 'api.sendgrid.com/v3';
 
 	const options: OptionsWithUri = {
-		headers: {
-			Authorization: `Bearer ${credentials.apiKey}`,
-		},
 		method,
 		qs,
 		body,
@@ -29,7 +26,7 @@ export async function sendGridApiRequest(this: IHookFunctions | IExecuteFunction
 		json: true,
 	};
 
-	if (Object.keys(body).length === 0) {
+	if (Object.keys(body as IDataObject).length === 0) {
 		delete options.body;
 	}
 
@@ -37,26 +34,18 @@ export async function sendGridApiRequest(this: IHookFunctions | IExecuteFunction
 		Object.assign(options, option);
 	}
 
-	try {
-		//@ts-ignore
-		return await this.helpers.request!(options);
-	} catch (error) {
-		if (error.response && error.response.body && error.response.body.errors) {
-
-			let errors = error.response.body.errors;
-
-			errors = errors.map((e: IDataObject) => e.message);
-			// Try to return the error prettier
-			throw new Error(
-				`SendGrid error response [${error.statusCode}]: ${errors.join('|')}`,
-			);
-		}
-		throw error;
-	}
+	return this.helpers.requestWithAuthentication.call(this, 'sendGridApi', options);
 }
 
-export async function sendGridApiRequestAllItems(this: IExecuteFunctions | ILoadOptionsFunctions, endpoint: string, method: string, propertyName: string, body: any = {}, query: IDataObject = {}): Promise<any> { // tslint:disable-line:no-any
+export async function sendGridApiRequestAllItems(
+	this: IExecuteFunctions | ILoadOptionsFunctions,
+	endpoint: string,
+	method: string,
+	propertyName: string,
 
+	body: any = {},
+	query: IDataObject = {},
+): Promise<any> {
 	const returnData: IDataObject[] = [];
 
 	let responseData;
@@ -64,15 +53,14 @@ export async function sendGridApiRequestAllItems(this: IExecuteFunctions | ILoad
 	let uri;
 
 	do {
-		responseData = await sendGridApiRequest.call(this, endpoint, method, body, query, uri);
+		responseData = await sendGridApiRequest.call(this, endpoint, method, body, query, uri); // possible bug, as function does not have uri parameter
 		uri = responseData._metadata.next;
-		returnData.push.apply(returnData, responseData[propertyName]);
-		if (query.limit && returnData.length >= query.limit) {
+		returnData.push.apply(returnData, responseData[propertyName] as IDataObject[]);
+		const limit = query.limit as number | undefined;
+		if (limit && returnData.length >= limit) {
 			return returnData;
 		}
-	} while (
-		responseData._metadata.next !== undefined
-	);
+	} while (responseData._metadata.next !== undefined);
 
 	return returnData;
 }

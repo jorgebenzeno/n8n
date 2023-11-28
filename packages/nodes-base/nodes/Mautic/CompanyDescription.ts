@@ -1,17 +1,14 @@
-import {
-	INodeProperties,
-} from 'n8n-workflow';
+import type { INodeProperties } from 'n8n-workflow';
 
-export const companyOperations = [
+export const companyOperations: INodeProperties[] = [
 	{
 		displayName: 'Operation',
 		name: 'operation',
 		type: 'options',
+		noDataExpression: true,
 		displayOptions: {
 			show: {
-				resource: [
-					'company',
-				],
+				resource: ['company'],
 			},
 		},
 		options: [
@@ -19,35 +16,38 @@ export const companyOperations = [
 				name: 'Create',
 				value: 'create',
 				description: 'Create a new company',
+				action: 'Create a company',
 			},
 			{
 				name: 'Delete',
 				value: 'delete',
 				description: 'Delete a company',
+				action: 'Delete a company',
 			},
 			{
 				name: 'Get',
 				value: 'get',
 				description: 'Get data of a company',
+				action: 'Get a company',
 			},
 			{
-				name: 'Get All',
+				name: 'Get Many',
 				value: 'getAll',
-				description: 'Get data of all companies',
+				description: 'Get data of many companies',
+				action: 'Get many companies',
 			},
 			{
 				name: 'Update',
 				value: 'update',
 				description: 'Update a company',
+				action: 'Update a company',
 			},
 		],
 		default: 'create',
-		description: 'The operation to perform',
 	},
-] as INodeProperties[];
+];
 
-export const companyFields = [
-
+export const companyFields: INodeProperties[] = [
 	/* -------------------------------------------------------------------------- */
 	/*                                company:create                              */
 	/* -------------------------------------------------------------------------- */
@@ -57,33 +57,25 @@ export const companyFields = [
 		type: 'string',
 		displayOptions: {
 			show: {
-				resource: [
-					'company',
-				],
-				operation: [
-					'create',
-				],
+				resource: ['company'],
+				operation: ['create'],
 			},
 		},
 		default: '',
-		description: 'The name of the company to create.',
+		description: 'The name of the company to create',
 	},
 	{
-		displayName: 'Simple',
+		displayName: 'Simplify',
 		name: 'simple',
 		type: 'boolean',
 		displayOptions: {
 			show: {
-				resource: [
-					'company',
-				],
-				operation: [
-					'create',
-				],
+				resource: ['company'],
+				operation: ['create'],
 			},
 		},
 		default: true,
-		description: 'When set to true a simplify version of the response will be used else the raw data.',
+		description: 'Whether to return a simplified version of the response instead of the raw data',
 	},
 	{
 		displayName: 'Additional Fields',
@@ -93,15 +85,137 @@ export const companyFields = [
 		default: {},
 		displayOptions: {
 			show: {
-				resource: [
-					'company',
-				],
-				operation: [
-					'create',
-				],
+				resource: ['company'],
+				operation: ['create'],
 			},
 		},
 		options: [
+			{
+				displayName: 'Address',
+				name: 'addressUi',
+				placeholder: 'Address',
+				type: 'fixedCollection',
+				typeOptions: {
+					multipleValues: false,
+				},
+				default: {},
+				options: [
+					{
+						name: 'addressValues',
+						displayName: 'Address',
+						values: [
+							{
+								displayName: 'Address Line 1',
+								name: 'address1',
+								type: 'string',
+								default: '',
+							},
+							{
+								displayName: 'Address Line 2',
+								name: 'address2',
+								type: 'string',
+								default: '',
+							},
+							{
+								displayName: 'City',
+								name: 'city',
+								type: 'string',
+								default: '',
+							},
+							{
+								displayName: 'State',
+								name: 'state',
+								type: 'string',
+								default: '',
+							},
+							{
+								displayName: 'Country',
+								name: 'country',
+								type: 'string',
+								default: '',
+							},
+							{
+								displayName: 'Zip Code',
+								name: 'zipCode',
+								type: 'string',
+								default: '',
+							},
+						],
+					},
+				],
+			},
+			{
+				displayName: 'Annual Revenue',
+				name: 'annualRevenue',
+				type: 'number',
+				default: 0,
+			},
+			{
+				displayName: 'Company Email',
+				name: 'companyEmail',
+				type: 'string',
+				default: '',
+			},
+			{
+				displayName: 'Custom Fields',
+				name: 'customFieldsUi',
+				placeholder: 'Add Custom Fields',
+				description: 'Adds a custom fields to set also values which have not been predefined',
+				type: 'fixedCollection',
+				typeOptions: {
+					multipleValues: true,
+				},
+				default: {},
+				options: [
+					{
+						name: 'customFieldValues',
+						displayName: 'Field',
+						values: [
+							{
+								displayName: 'Field Name or ID',
+								name: 'fieldId',
+								type: 'options',
+								typeOptions: {
+									loadOptionsMethod: 'getCompanyFields',
+								},
+								default: '',
+								description:
+									'ID of the field to set. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code-examples/expressions/">expression</a>.',
+							},
+							{
+								displayName: 'Field Value',
+								name: 'fieldValue',
+								type: 'string',
+								default: '',
+								description: 'Value of the field to set',
+							},
+						],
+					},
+				],
+			},
+			{
+				displayName: 'Description',
+				name: 'description',
+				type: 'string',
+				default: '',
+			},
+			{
+				displayName: 'Fax',
+				name: 'fax',
+				type: 'string',
+				default: '',
+			},
+			{
+				displayName: 'Industry Name or ID',
+				name: 'industry',
+				type: 'options',
+				description:
+					'Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code-examples/expressions/">expression</a>',
+				typeOptions: {
+					loadOptionsMethod: 'getIndustries',
+				},
+				default: '',
+			},
 			{
 				displayName: 'Is Published',
 				name: 'isPublished',
@@ -109,11 +223,30 @@ export const companyFields = [
 				default: false,
 			},
 			{
+				displayName: 'Number of Employees',
+				name: 'numberOfEmpoyees',
+				type: 'number',
+				default: 0,
+			},
+
+			{
 				displayName: 'Overwrite With Blank',
 				name: 'overwriteWithBlank',
 				type: 'boolean',
 				default: false,
-				description: 'If true, then empty values are set to fields. Otherwise empty values are skipped',
+				description: 'Whether empty values are set to fields. Otherwise empty values are skipped.',
+			},
+			{
+				displayName: 'Phone',
+				name: 'phone',
+				type: 'string',
+				default: '',
+			},
+			{
+				displayName: 'Website',
+				name: 'website',
+				type: 'string',
+				default: '',
 			},
 		],
 	},
@@ -127,33 +260,25 @@ export const companyFields = [
 		type: 'string',
 		displayOptions: {
 			show: {
-				operation: [
-					'update',
-				],
-				resource: [
-					'company',
-				],
+				operation: ['update'],
+				resource: ['company'],
 			},
 		},
 		default: '',
-		description: 'The ID of the company to update.',
+		description: 'The ID of the company to update',
 	},
 	{
-		displayName: 'Simple',
+		displayName: 'Simplify',
 		name: 'simple',
 		type: 'boolean',
 		displayOptions: {
 			show: {
-				resource: [
-					'company',
-				],
-				operation: [
-					'update',
-				],
+				resource: ['company'],
+				operation: ['update'],
 			},
 		},
 		default: true,
-		description: 'When set to true a simplify version of the response will be used else the raw data.',
+		description: 'Whether to return a simplified version of the response instead of the raw data',
 	},
 	{
 		displayName: 'Update Fields',
@@ -163,21 +288,142 @@ export const companyFields = [
 		default: {},
 		displayOptions: {
 			show: {
-				resource: [
-					'company',
-				],
-				operation: [
-					'update',
-				],
+				resource: ['company'],
+				operation: ['update'],
 			},
 		},
 		options: [
+			{
+				displayName: 'Address',
+				name: 'addressUi',
+				placeholder: 'Address',
+				type: 'fixedCollection',
+				typeOptions: {
+					multipleValues: false,
+				},
+				default: {},
+				options: [
+					{
+						name: 'addressValues',
+						displayName: 'Address',
+						values: [
+							{
+								displayName: 'Address Line 1',
+								name: 'address1',
+								type: 'string',
+								default: '',
+							},
+							{
+								displayName: 'Address Line 2',
+								name: 'address2',
+								type: 'string',
+								default: '',
+							},
+							{
+								displayName: 'City',
+								name: 'city',
+								type: 'string',
+								default: '',
+							},
+							{
+								displayName: 'State',
+								name: 'state',
+								type: 'string',
+								default: '',
+							},
+							{
+								displayName: 'Country',
+								name: 'country',
+								type: 'string',
+								default: '',
+							},
+							{
+								displayName: 'Zip Code',
+								name: 'zipCode',
+								type: 'string',
+								default: '',
+							},
+						],
+					},
+				],
+			},
+			{
+				displayName: 'Annual Revenue',
+				name: 'annualRevenue',
+				type: 'number',
+				default: 0,
+			},
+			{
+				displayName: 'Company Email',
+				name: 'companyEmail',
+				type: 'string',
+				default: '',
+			},
 			{
 				displayName: 'Company Name',
 				name: 'name',
 				type: 'string',
 				default: '',
-				description: 'Company name',
+			},
+			{
+				displayName: 'Custom Fields',
+				name: 'customFieldsUi',
+				placeholder: 'Add Custom Fields',
+				description: 'Adds a custom fields to set also values which have not been predefined',
+				type: 'fixedCollection',
+				typeOptions: {
+					multipleValues: true,
+				},
+				default: {},
+				options: [
+					{
+						name: 'customFieldValues',
+						displayName: 'Field',
+						values: [
+							{
+								displayName: 'Field Name or ID',
+								name: 'fieldId',
+								type: 'options',
+								typeOptions: {
+									loadOptionsMethod: 'getCompanyFields',
+								},
+								default: '',
+								description:
+									'ID of the field to set. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code-examples/expressions/">expression</a>.',
+							},
+							{
+								displayName: 'Field Value',
+								name: 'fieldValue',
+								type: 'string',
+								default: '',
+								description: 'Value of the field to set',
+							},
+						],
+					},
+				],
+			},
+			{
+				displayName: 'Description',
+				name: 'description',
+				type: 'string',
+				default: '',
+			},
+			{
+				displayName: 'Fax',
+				name: 'fax',
+				type: 'string',
+				default: '',
+			},
+			{
+				displayName: 'Industry Name or ID',
+				name: 'industry',
+				type: 'options',
+				description:
+					'Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code-examples/expressions/">expression</a>',
+				typeOptions: {
+					loadOptionsMethod: 'getIndustries',
+				},
+				default: '',
 			},
 			{
 				displayName: 'Is Published',
@@ -186,11 +432,30 @@ export const companyFields = [
 				default: false,
 			},
 			{
+				displayName: 'Number of Employees',
+				name: 'numberOfEmpoyees',
+				type: 'number',
+				default: 0,
+			},
+
+			{
 				displayName: 'Overwrite With Blank',
 				name: 'overwriteWithBlank',
 				type: 'boolean',
 				default: false,
-				description: 'If true, then empty values are set to fields. Otherwise empty values are skipped',
+				description: 'Whether empty values are set to fields. Otherwise, empty values are skipped.',
+			},
+			{
+				displayName: 'Phone',
+				name: 'phone',
+				type: 'string',
+				default: '',
+			},
+			{
+				displayName: 'Website',
+				name: 'website',
+				type: 'string',
+				default: '',
 			},
 		],
 	},
@@ -204,33 +469,25 @@ export const companyFields = [
 		type: 'string',
 		displayOptions: {
 			show: {
-				operation: [
-					'get',
-				],
-				resource: [
-					'company',
-				],
+				operation: ['get'],
+				resource: ['company'],
 			},
 		},
 		default: '',
-		description: 'The ID of the company to return.',
+		description: 'The ID of the company to return',
 	},
 	{
-		displayName: 'Simple',
+		displayName: 'Simplify',
 		name: 'simple',
 		type: 'boolean',
 		displayOptions: {
 			show: {
-				resource: [
-					'company',
-				],
-				operation: [
-					'get',
-				],
+				resource: ['company'],
+				operation: ['get'],
 			},
 		},
 		default: true,
-		description: 'When set to true a simplify version of the response will be used else the raw data.',
+		description: 'Whether to return a simplified version of the response instead of the raw data',
 	},
 
 	/* -------------------------------------------------------------------------- */
@@ -242,16 +499,12 @@ export const companyFields = [
 		type: 'boolean',
 		displayOptions: {
 			show: {
-				resource: [
-					'company',
-				],
-				operation: [
-					'getAll',
-				],
+				resource: ['company'],
+				operation: ['getAll'],
 			},
 		},
 		default: false,
-		description: 'If all results should be returned or only up to a given limit.',
+		description: 'Whether to return all results or only up to a given limit',
 	},
 	{
 		displayName: 'Limit',
@@ -259,15 +512,9 @@ export const companyFields = [
 		type: 'number',
 		displayOptions: {
 			show: {
-				resource: [
-					'company',
-				],
-				operation: [
-					'getAll',
-				],
-				returnAll: [
-					false,
-				],
+				resource: ['company'],
+				operation: ['getAll'],
+				returnAll: [false],
 			},
 		},
 		typeOptions: {
@@ -275,24 +522,20 @@ export const companyFields = [
 			maxValue: 30,
 		},
 		default: 30,
-		description: 'How many results to return.',
+		description: 'Max number of results to return',
 	},
 	{
-		displayName: 'Simple',
+		displayName: 'Simplify',
 		name: 'simple',
 		type: 'boolean',
 		displayOptions: {
 			show: {
-				resource: [
-					'company',
-				],
-				operation: [
-					'getAll',
-				],
+				resource: ['company'],
+				operation: ['getAll'],
 			},
 		},
 		default: true,
-		description: 'When set to true a simplify version of the response will be used else the raw data.',
+		description: 'Whether to return a simplified version of the response instead of the raw data',
 	},
 	{
 		displayName: 'Additional Fields',
@@ -302,12 +545,8 @@ export const companyFields = [
 		default: {},
 		displayOptions: {
 			show: {
-				resource: [
-					'company',
-				],
-				operation: [
-					'getAll',
-				],
+				resource: ['company'],
+				operation: ['getAll'],
 			},
 		},
 		options: [
@@ -326,24 +565,25 @@ export const companyFields = [
 					},
 				],
 				default: '',
-				description: 'Sort direction: asc or desc.',
+				description: 'Sort direction: asc or desc',
 			},
 			{
-				displayName: 'Order By',
+				displayName: 'Order By Name or ID',
 				name: 'orderBy',
 				type: 'options',
 				typeOptions: {
 					loadOptionsMethod: 'getCompanyFields',
 				},
 				default: '',
-				description: 'Column to sort by. Can use any column listed in the response.',
+				description:
+					'Column to sort by. Can use any column listed in the response. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code-examples/expressions/">expression</a>.',
 			},
 			{
 				displayName: 'Search',
-				name: 'isPublished',
-				type: 'boolean',
+				name: 'search',
+				type: 'string',
 				default: '',
-				description: 'String or search command to filter entities by.',
+				description: 'String or search command to filter entities by',
 			},
 		],
 	},
@@ -356,32 +596,24 @@ export const companyFields = [
 		type: 'string',
 		displayOptions: {
 			show: {
-				operation: [
-					'delete',
-				],
-				resource: [
-					'company',
-				],
+				operation: ['delete'],
+				resource: ['company'],
 			},
 		},
 		default: '',
-		description: 'The ID of the company to delete.',
+		description: 'The ID of the company to delete',
 	},
 	{
-		displayName: 'Simple',
+		displayName: 'Simplify',
 		name: 'simple',
 		type: 'boolean',
 		displayOptions: {
 			show: {
-				resource: [
-					'company',
-				],
-				operation: [
-					'delete',
-				],
+				resource: ['company'],
+				operation: ['delete'],
 			},
 		},
 		default: true,
-		description: 'When set to true a simplify version of the response will be used else the raw data.',
+		description: 'Whether to return a simplified version of the response instead of the raw data',
 	},
-] as INodeProperties[];
+];

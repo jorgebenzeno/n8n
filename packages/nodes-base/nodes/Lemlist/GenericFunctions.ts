@@ -1,16 +1,13 @@
-import {
+import type {
 	IExecuteFunctions,
 	IHookFunctions,
-} from 'n8n-core';
-
-import {
 	IDataObject,
 	ILoadOptionsFunctions,
 } from 'n8n-workflow';
 
-import {
-	OptionsWithUri,
-} from 'request';
+import type { OptionsWithUri } from 'request';
+
+import { capitalCase } from 'change-case';
 
 /**
  * Make an authenticated API request to Lemlist.
@@ -23,18 +20,8 @@ export async function lemlistApiRequest(
 	qs: IDataObject = {},
 	option: IDataObject = {},
 ) {
-
-	const { apiKey } = this.getCredentials('lemlistApi') as {
-		apiKey: string,
-	};
-
-	const encodedApiKey = Buffer.from(':' + apiKey).toString('base64');
-
 	const options: OptionsWithUri = {
-		headers: {
-			'user-agent': 'n8n',
-			'Authorization': `Basic ${encodedApiKey}`,
-		},
+		headers: {},
 		method,
 		uri: `https://api.lemlist.com/api${endpoint}`,
 		qs,
@@ -54,16 +41,7 @@ export async function lemlistApiRequest(
 		Object.assign(options, option);
 	}
 
-	try {
-		return await this.helpers.request!(options);
-	} catch (error) {
-
-		if (error?.response?.body) {
-			throw new Error(`Lemlist error response [${error.statusCode}]: ${error?.response?.body}`);
-		}
-
-		throw error;
-	}
+	return this.helpers.requestWithAuthentication.call(this, 'lemlistApi', options);
 }
 
 /**
@@ -73,21 +51,40 @@ export async function lemlistApiRequestAllItems(
 	this: IExecuteFunctions | ILoadOptionsFunctions | IHookFunctions,
 	method: string,
 	endpoint: string,
+	qs: IDataObject = {},
 ) {
 	const returnData: IDataObject[] = [];
 
 	let responseData;
-	const qs: IDataObject = {};
 
 	qs.limit = 100;
 	qs.offset = 0;
 
 	do {
 		responseData = await lemlistApiRequest.call(this, method, endpoint, {}, qs);
-		returnData.push(...responseData);
+		returnData.push(...(responseData as IDataObject[]));
 		qs.offset += qs.limit;
-	} while (
-		responseData.length !== 0
-	);
+	} while (responseData.length !== 0);
 	return returnData;
+}
+
+export function getEvents() {
+	const events = [
+		'*',
+		'emailsBounced',
+		'emailsClicked',
+		'emailsFailed',
+		'emailsInterested',
+		'emailsNotInterested',
+		'emailsOpened',
+		'emailsReplied',
+		'emailsSendFailed',
+		'emailsSent',
+		'emailsUnsubscribed',
+	];
+
+	return events.map((event: string) => ({
+		name: event === '*' ? '*' : capitalCase(event),
+		value: event,
+	}));
 }

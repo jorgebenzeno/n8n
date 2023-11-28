@@ -1,4 +1,5 @@
 export interface IContact {
+	[key: string]: any;
 	LastName?: string;
 	Fax?: string;
 	Email?: string;

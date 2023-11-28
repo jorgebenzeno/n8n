@@ -1,9 +1,6 @@
-import {
+import type {
 	IHookFunctions,
 	IWebhookFunctions,
-} from 'n8n-core';
-
-import {
 	IDataObject,
 	ILoadOptionsFunctions,
 	INodeType,
@@ -11,9 +8,7 @@ import {
 	IWebhookResponseData,
 } from 'n8n-workflow';
 
-import {
-	lemlistApiRequest,
-} from './GenericFunctions';
+import { getEvents, lemlistApiRequest } from './GenericFunctions';
 
 export class LemlistTrigger implements INodeType {
 	description: INodeTypeDescription = {
@@ -26,7 +21,6 @@ export class LemlistTrigger implements INodeType {
 		description: 'Handle Lemlist events via webhooks',
 		defaults: {
 			name: 'Lemlist Trigger',
-			color: '#4d19ff',
 		},
 		inputs: [],
 		outputs: ['main'],
@@ -51,36 +45,7 @@ export class LemlistTrigger implements INodeType {
 				type: 'options',
 				required: true,
 				default: '',
-				options: [
-					{
-						name: 'Email Bounced',
-						value: 'emailsBounced',
-					},
-					{
-						name: 'Email Clicked',
-						value: 'emailsClicked',
-					},
-					{
-						name: 'Email Opened',
-						value: 'emailsOpened',
-					},
-					{
-						name: 'Email Replied',
-						value: 'emailsReplied',
-					},
-					{
-						name: 'Email Send Failed',
-						value: 'emailsSendFailed',
-					},
-					{
-						name: 'Email Sent',
-						value: 'emailsSent',
-					},
-					{
-						name: 'Email Unsubscribed',
-						value: 'emailsUnsubscribed',
-					},
-				],
+				options: [...getEvents()],
 			},
 			{
 				displayName: 'Options',
@@ -90,21 +55,22 @@ export class LemlistTrigger implements INodeType {
 				default: {},
 				options: [
 					{
-						displayName: 'Campaing ID',
+						displayName: 'Campaing Name or ID',
 						name: 'campaignId',
 						type: 'options',
 						typeOptions: {
 							loadOptionsMethod: 'getCampaigns',
 						},
 						default: '',
-						description: ` We'll call this hook only for this campaignId.`,
+						description:
+							'We\'ll call this hook only for this campaignId. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code-examples/expressions/">expression</a>.',
 					},
 					{
 						displayName: 'Is First',
 						name: 'isFirst',
 						type: 'boolean',
 						default: false,
-						description: `We'll call this hook only the first time this activity happened.`,
+						description: 'Whether to call this hook only the first time this activity happened',
 					},
 				],
 			},
@@ -115,14 +81,14 @@ export class LemlistTrigger implements INodeType {
 		loadOptions: {
 			async getCampaigns(this: ILoadOptionsFunctions) {
 				const campaigns = await lemlistApiRequest.call(this, 'GET', '/campaigns');
-				return campaigns.map(({ _id, name }: { _id: string, name: string }) => ({
+				return campaigns.map(({ _id, name }: { _id: string; name: string }) => ({
 					name,
 					value: _id,
 				}));
 			},
 		},
 	};
-	// @ts-ignore
+
 	webhookMethods = {
 		default: {
 			async checkExists(this: IHookFunctions): Promise<boolean> {
@@ -144,8 +110,11 @@ export class LemlistTrigger implements INodeType {
 				const event = this.getNodeParameter('event') as string[];
 				const body: IDataObject = {
 					targetUrl: webhookUrl,
-					event,
+					type: event,
 				};
+				if (event.includes('*')) {
+					delete body.type;
+				}
 				Object.assign(body, options);
 				const webhook = await lemlistApiRequest.call(this, 'POST', '/hooks', body);
 				webhookData.webhookId = webhook._id;
@@ -167,9 +136,7 @@ export class LemlistTrigger implements INodeType {
 	async webhook(this: IWebhookFunctions): Promise<IWebhookResponseData> {
 		const req = this.getRequestObject();
 		return {
-			workflowData: [
-				this.helpers.returnJsonArray(req.body),
-			],
+			workflowData: [this.helpers.returnJsonArray(req.body as IDataObject)],
 		};
 	}
 }

@@ -1,23 +1,29 @@
-import {
+import type {
+	IAuthenticateGeneric,
+	ICredentialTestRequest,
 	ICredentialType,
-	NodePropertyTypes,
+	INodeProperties,
 } from 'n8n-workflow';
 
 export class DropboxApi implements ICredentialType {
 	name = 'dropboxApi';
+
 	displayName = 'Dropbox API';
+
 	documentationUrl = 'dropbox';
-	properties = [
+
+	properties: INodeProperties[] = [
 		{
 			displayName: 'Access Token',
 			name: 'accessToken',
-			type: 'string' as NodePropertyTypes,
+			type: 'string',
+			typeOptions: { password: true },
 			default: '',
 		},
 		{
 			displayName: 'APP Access Type',
 			name: 'accessType',
-			type: 'options' as NodePropertyTypes,
+			type: 'options',
 			options: [
 				{
 					name: 'App Folder',
@@ -31,4 +37,21 @@ export class DropboxApi implements ICredentialType {
 			default: 'full',
 		},
 	];
+
+	authenticate: IAuthenticateGeneric = {
+		type: 'generic',
+		properties: {
+			headers: {
+				Authorization: '=Bearer {{$credentials.accessToken}}',
+			},
+		},
+	};
+
+	test: ICredentialTestRequest = {
+		request: {
+			baseURL: 'https://api.dropboxapi.com/2',
+			url: '/users/get_current_account',
+			method: 'POST',
+		},
+	};
 }

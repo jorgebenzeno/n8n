@@ -1,182 +1,179 @@
 import { CronJob } from 'cron';
 
-import {
+import type {
 	IGetExecutePollFunctions,
 	IGetExecuteTriggerFunctions,
 	INode,
 	IPollResponse,
 	ITriggerResponse,
 	IWorkflowExecuteAdditionalData,
+	TriggerTime,
 	Workflow,
 	WorkflowActivateMode,
 	WorkflowExecuteMode,
 } from 'n8n-workflow';
-
 import {
-	ITriggerTime,
-	IWorkflowData,
-} from './';
+	LoggerProxy as Logger,
+	toCronExpression,
+	WorkflowActivationError,
+	WorkflowDeactivationError,
+} from 'n8n-workflow';
+
+import type { IWorkflowData } from './Interfaces';
 
 export class ActiveWorkflows {
-	private workflowData: {
-		[key: string]: IWorkflowData;
+	private activeWorkflows: {
+		[workflowId: string]: IWorkflowData;
 	} = {};
 
-
 	/**
-	 * Returns if the workflow is active
-	 *
-	 * @param {string} id The id of the workflow to check
-	 * @returns {boolean}
-	 * @memberof ActiveWorkflows
+	 * Returns if the workflow is active in memory.
 	 */
-	isActive(id: string): boolean {
-		return this.workflowData.hasOwnProperty(id);
+	isActive(workflowId: string) {
+		return this.activeWorkflows.hasOwnProperty(workflowId);
 	}
 
-
 	/**
-	 * Returns the ids of the currently active workflows
-	 *
-	 * @returns {string[]}
-	 * @memberof ActiveWorkflows
+	 * Returns the IDs of the currently active workflows in memory.
 	 */
-	allActiveWorkflows(): string[] {
-		return Object.keys(this.workflowData);
+	allActiveWorkflows() {
+		return Object.keys(this.activeWorkflows);
 	}
 
-
 	/**
-	 * Returns the Workflow data for the workflow with
-	 * the given id if it is currently active
-	 *
-	 * @param {string} id
-	 * @returns {(WorkflowData | undefined)}
-	 * @memberof ActiveWorkflows
+	 * Returns the workflow data for the given ID if currently active in memory.
 	 */
-	get(id: string): IWorkflowData | undefined {
-		return this.workflowData[id];
+	get(workflowId: string) {
+		return this.activeWorkflows[workflowId];
 	}
-
 
 	/**
 	 * Makes a workflow active
 	 *
-	 * @param {string} id The id of the workflow to activate
+	 * @param {string} workflowId The id of the workflow to activate
 	 * @param {Workflow} workflow The workflow to activate
 	 * @param {IWorkflowExecuteAdditionalData} additionalData The additional data which is needed to run workflows
-	 * @returns {Promise<void>}
-	 * @memberof ActiveWorkflows
 	 */
-	async add(id: string, workflow: Workflow, additionalData: IWorkflowExecuteAdditionalData, mode: WorkflowExecuteMode, activation: WorkflowActivateMode, getTriggerFunctions: IGetExecuteTriggerFunctions, getPollFunctions: IGetExecutePollFunctions): Promise<void> {
-		this.workflowData[id] = {};
+	async add(
+		workflowId: string,
+		workflow: Workflow,
+		additionalData: IWorkflowExecuteAdditionalData,
+		mode: WorkflowExecuteMode,
+		activation: WorkflowActivateMode,
+		getTriggerFunctions: IGetExecuteTriggerFunctions,
+		getPollFunctions: IGetExecutePollFunctions,
+	) {
+		this.activeWorkflows[workflowId] = {};
 		const triggerNodes = workflow.getTriggerNodes();
 
 		let triggerResponse: ITriggerResponse | undefined;
-		this.workflowData[id].triggerResponses = [];
+
+		this.activeWorkflows[workflowId].triggerResponses = [];
+
 		for (const triggerNode of triggerNodes) {
-			triggerResponse = await workflow.runTrigger(triggerNode, getTriggerFunctions, additionalData, mode, activation);
-			if (triggerResponse !== undefined) {
-				// If a response was given save it
-				this.workflowData[id].triggerResponses!.push(triggerResponse);
+			try {
+				triggerResponse = await workflow.runTrigger(
+					triggerNode,
+					getTriggerFunctions,
+					additionalData,
+					mode,
+					activation,
+				);
+				if (triggerResponse !== undefined) {
+					// If a response was given save it
+
+					this.activeWorkflows[workflowId].triggerResponses!.push(triggerResponse);
+				}
+			} catch (e) {
+				const error = e instanceof Error ? e : new Error(`${e}`);
+
+				throw new WorkflowActivationError(
+					`There was a problem activating the workflow: "${error.message}"`,
+					{ cause: error, node: triggerNode },
+				);
 			}
 		}
 
-		const pollNodes = workflow.getPollNodes();
-		if (pollNodes.length) {
-			this.workflowData[id].pollResponses = [];
-			for (const pollNode of pollNodes) {
-				this.workflowData[id].pollResponses!.push(await this.activatePolling(pollNode, workflow, additionalData, getPollFunctions, mode, activation));
+		const pollingNodes = workflow.getPollNodes();
+
+		if (pollingNodes.length === 0) return;
+
+		this.activeWorkflows[workflowId].pollResponses = [];
+
+		for (const pollNode of pollingNodes) {
+			try {
+				this.activeWorkflows[workflowId].pollResponses!.push(
+					await this.activatePolling(
+						pollNode,
+						workflow,
+						additionalData,
+						getPollFunctions,
+						mode,
+						activation,
+					),
+				);
+			} catch (e) {
+				const error = e instanceof Error ? e : new Error(`${e}`);
+
+				throw new WorkflowActivationError(
+					`There was a problem activating the workflow: "${error.message}"`,
+					{ cause: error, node: pollNode },
+				);
 			}
 		}
 	}
 
-
 	/**
 	 * Activates polling for the given node
-	 *
-	 * @param {INode} node
-	 * @param {Workflow} workflow
-	 * @param {IWorkflowExecuteAdditionalData} additionalData
-	 * @param {IGetExecutePollFunctions} getPollFunctions
-	 * @returns {Promise<IPollResponse>}
-	 * @memberof ActiveWorkflows
 	 */
-	async activatePolling(node: INode, workflow: Workflow, additionalData: IWorkflowExecuteAdditionalData, getPollFunctions: IGetExecutePollFunctions, mode: WorkflowExecuteMode, activation: WorkflowActivateMode): Promise<IPollResponse> {
+	async activatePolling(
+		node: INode,
+		workflow: Workflow,
+		additionalData: IWorkflowExecuteAdditionalData,
+		getPollFunctions: IGetExecutePollFunctions,
+		mode: WorkflowExecuteMode,
+		activation: WorkflowActivateMode,
+	): Promise<IPollResponse> {
 		const pollFunctions = getPollFunctions(workflow, node, additionalData, mode, activation);
 
 		const pollTimes = pollFunctions.getNodeParameter('pollTimes') as unknown as {
-			item: ITriggerTime[];
+			item: TriggerTime[];
 		};
 
-		// Define the order the cron-time-parameter appear
-		const parameterOrder = [
-			'second',     // 0 - 59
-			'minute',     // 0 - 59
-			'hour',       // 0 - 23
-			'dayOfMonth', // 1 - 31
-			'month',      // 0 - 11(Jan - Dec)
-			'weekday',    // 0 - 6(Sun - Sat)
-		];
-
 		// Get all the trigger times
-		const cronTimes: string[] = [];
-		let cronTime: string[];
-		let parameterName: string;
-		if (pollTimes.item !== undefined) {
-			for (const item of pollTimes.item) {
-				cronTime = [];
-				if (item.mode === 'custom') {
-					cronTimes.push((item.cronExpression as string).trim());
-					continue;
-				}
-				if (item.mode === 'everyMinute') {
-					cronTimes.push(`${Math.floor(Math.random() * 60).toString()} * * * * *`);
-					continue;
-				}
-				if (item.mode === 'everyX') {
-					if (item.unit === 'minutes') {
-						cronTimes.push(`${Math.floor(Math.random() * 60).toString()} */${item.value} * * * *`);
-					} else if (item.unit === 'hours') {
-						cronTimes.push(`${Math.floor(Math.random() * 60).toString()} 0 */${item.value} * * *`);
-					}
-					continue;
-				}
-
-				for (parameterName of parameterOrder) {
-					if (item[parameterName] !== undefined) {
-						// Value is set so use it
-						cronTime.push(item[parameterName] as string);
-					} else if (parameterName === 'second') {
-						// For seconds we use by default a random one to make sure to
-						// balance the load a little bit over time
-						cronTime.push(Math.floor(Math.random() * 60).toString());
-					} else {
-						// For all others set "any"
-						cronTime.push('*');
-					}
-				}
-
-				cronTimes.push(cronTime.join(' '));
-			}
-		}
-
+		const cronTimes = (pollTimes.item || []).map(toCronExpression);
 		// The trigger function to execute when the cron-time got reached
-		const executeTrigger = async () => {
-			const pollResponse = await workflow.runPoll(node, pollFunctions);
+		const executeTrigger = async (testingTrigger = false) => {
+			Logger.debug(`Polling trigger initiated for workflow "${workflow.name}"`, {
+				workflowName: workflow.name,
+				workflowId: workflow.id,
+			});
 
-			if (pollResponse !== null) {
-				pollFunctions.__emit(pollResponse);
+			try {
+				const pollResponse = await workflow.runPoll(node, pollFunctions);
+
+				if (pollResponse !== null) {
+					pollFunctions.__emit(pollResponse);
+				}
+			} catch (error) {
+				// If the poll function failes in the first activation
+				// throw the error back so we let the user know there is
+				// an issue with the trigger.
+				if (testingTrigger) {
+					throw error;
+				}
+				pollFunctions.__emitError(error as Error);
 			}
 		};
 
 		// Execute the trigger directly to be able to know if it works
-		await executeTrigger();
+		await executeTrigger(true);
 
 		const timezone = pollFunctions.getTimezone();
 
 		// Start the cron-jobs
 		const cronJobs: CronJob[] = [];
+
 		for (const cronTime of cronTimes) {
 			const cronTimeParts = cronTime.split(' ');
 			if (cronTimeParts.length > 0 && cronTimeParts[0].includes('*')) {
@@ -198,39 +195,50 @@ export class ActiveWorkflows {
 		};
 	}
 
-
 	/**
-	 * Makes a workflow inactive
-	 *
-	 * @param {string} id The id of the workflow to deactivate
-	 * @returns {Promise<void>}
-	 * @memberof ActiveWorkflows
+	 * Makes a workflow inactive in memory.
 	 */
-	async remove(id: string): Promise<void> {
-		if (!this.isActive(id)) {
-			// Workflow is currently not registered
-			throw new Error(`The workflow with the id "${id}" is currently not active and can so not be removed`);
+	async remove(workflowId: string) {
+		if (!this.isActive(workflowId)) {
+			Logger.warn(`Cannot deactivate already inactive workflow ID "${workflowId}"`);
+			return false;
 		}
 
-		const workflowData = this.workflowData[id];
+		const w = this.activeWorkflows[workflowId];
 
-		if (workflowData.triggerResponses) {
-			for (const triggerResponse of workflowData.triggerResponses) {
-				if (triggerResponse.closeFunction) {
-					await triggerResponse.closeFunction();
-				}
-			}
-		}
+		w.triggerResponses?.forEach(async (r) => this.close(r, workflowId, 'trigger'));
+		w.pollResponses?.forEach(async (r) => this.close(r, workflowId, 'poller'));
 
-		if (workflowData.pollResponses) {
-			for (const pollResponse of workflowData.pollResponses) {
-				if (pollResponse.closeFunction) {
-					await pollResponse.closeFunction();
-				}
-			}
-		}
+		delete this.activeWorkflows[workflowId];
 
-		delete this.workflowData[id];
+		return true;
 	}
 
+	async removeAllTriggerAndPollerBasedWorkflows() {
+		for (const workflowId of Object.keys(this.activeWorkflows)) {
+			const w = this.activeWorkflows[workflowId];
+
+			w.triggerResponses?.forEach(async (r) => this.close(r, workflowId, 'trigger'));
+			w.pollResponses?.forEach(async (r) => this.close(r, workflowId, 'poller'));
+		}
+	}
+
+	private async close(
+		response: ITriggerResponse | IPollResponse,
+		workflowId: string,
+		target: 'trigger' | 'poller',
+	) {
+		if (!response.closeFunction) return;
+
+		try {
+			await response.closeFunction();
+		} catch (e) {
+			const error = e instanceof Error ? e : new Error(`${e}`);
+
+			throw new WorkflowDeactivationError(
+				`Failed to deactivate ${target} of workflow ID "${workflowId}": "${error.message}"`,
+				{ cause: error, workflowId },
+			);
+		}
+	}
 }

@@ -1,4 +1,5 @@
 export interface IOpportunity {
+	[key: string]: any;
 	Name?: string;
 	StageName?: string;
 	CloseDate?: string;

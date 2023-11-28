@@ -1,52 +1,70 @@
-import {
-	INodeProperties,
-} from 'n8n-workflow';
+import type { INodeProperties } from 'n8n-workflow';
 
-export const channelOperations = [
+export const channelOperations: INodeProperties[] = [
 	{
 		displayName: 'Operation',
 		name: 'operation',
 		type: 'options',
+		noDataExpression: true,
 		displayOptions: {
 			show: {
-				resource: [
-					'channel',
-				],
+				resource: ['channel'],
 			},
 		},
 		options: [
 			{
+				name: 'Archive',
+				value: 'archive',
+				description: 'Archive a channel',
+				action: 'Archive a channel',
+			},
+			{
 				name: 'Create',
 				value: 'create',
 				description: 'Initiates a public or private channel-based conversation',
+				action: 'Create a channel',
+			},
+			{
+				name: 'Delete',
+				value: 'delete',
+				description: 'Delete a channel',
+				action: 'Delete a channel',
 			},
 			{
 				name: 'Get',
 				value: 'get',
 				description: 'Get information about a channel',
+				action: 'Get a channel',
 			},
 			{
-				name: 'Get All',
+				name: 'Get Many',
 				value: 'getAll',
-				description: 'Get all channels',
+				description: 'Get many channels',
+				action: 'Get many channels',
+			},
+			{
+				name: 'Unarchive',
+				value: 'unarchive',
+				description: 'Unarchive a channel',
+				action: 'Unarchive a channel',
 			},
 			{
 				name: 'Update',
 				value: 'update',
 				description: 'Update a channel',
+				action: 'Update a channel',
 			},
 		],
 		default: 'create',
-		description: 'The operation to perform.',
 	},
-] as INodeProperties[];
+];
 
-export const channelFields = [
+export const channelFields: INodeProperties[] = [
 	/*-------------------------------------------------------------------------- */
 	/*                                channel:create                             */
 	/* ------------------------------------------------------------------------- */
 	{
-		displayName: 'Workspace ID',
+		displayName: 'Workspace Name or ID',
 		name: 'workspaceId',
 		type: 'options',
 		typeOptions: {
@@ -55,16 +73,13 @@ export const channelFields = [
 		default: '',
 		displayOptions: {
 			show: {
-				operation: [
-					'create',
-				],
-				resource: [
-					'channel',
-				],
+				operation: ['create'],
+				resource: ['channel'],
 			},
 		},
 		required: true,
-		description: 'The id of the workspace.',
+		description:
+			'The ID of the workspace. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code-examples/expressions/">expression</a>.',
 	},
 	{
 		displayName: 'Name',
@@ -73,16 +88,12 @@ export const channelFields = [
 		default: '',
 		displayOptions: {
 			show: {
-				operation: [
-					'create',
-				],
-				resource: [
-					'channel',
-				],
+				operation: ['create'],
+				resource: ['channel'],
 			},
 		},
 		required: true,
-		description: 'The name of the channel.',
+		description: 'The name of the channel',
 	},
 	{
 		displayName: 'Additional Fields',
@@ -92,12 +103,8 @@ export const channelFields = [
 		default: {},
 		displayOptions: {
 			show: {
-				resource: [
-					'channel',
-				],
-				operation: [
-					'create',
-				],
+				resource: ['channel'],
+				operation: ['create'],
 			},
 		},
 		options: [
@@ -170,32 +177,33 @@ export const channelFields = [
 				name: 'public',
 				type: 'boolean',
 				default: false,
-				description: 'If enabled, the channel will be marked as public',
+				description: 'Whether the channel will be marked as public',
 			},
+
 			{
 				displayName: 'Temp ID',
 				name: 'temp_id',
 				type: 'number',
 				default: -1,
-				description: 'The temporary id of the channel. It needs to be a negative number.',
+				description: 'The temporary ID of the channel. It needs to be a negative number.',
 			},
 			{
-				displayName: 'User IDs',
+				displayName: 'User Names or IDs',
 				name: 'user_ids',
 				type: 'multiOptions',
 				typeOptions: {
 					loadOptionsMethod: 'getUsers',
-					loadOptionsDependsOn: [
-						'workspaceId',
-					],
+					loadOptionsDependsOn: ['workspaceId'],
 				},
 				default: [],
-				description: 'The users that will participate in the channel.',
+				description:
+					'The users that will participate in the channel. Choose from the list, or specify IDs using an <a href="https://docs.n8n.io/code-examples/expressions/">expression</a>.',
 			},
 		],
 	},
+
 	/* -------------------------------------------------------------------------- */
-	/*                                  channel:get                               */
+	/*                                  channel:get/archive/unarchive/delete      */
 	/* -------------------------------------------------------------------------- */
 	{
 		displayName: 'Channel ID',
@@ -204,22 +212,19 @@ export const channelFields = [
 		default: '',
 		displayOptions: {
 			show: {
-				operation: [
-					'get',
-				],
-				resource: [
-					'channel',
-				],
+				operation: ['archive', 'delete', 'get', 'unarchive'],
+				resource: ['channel'],
 			},
 		},
 		required: true,
 		description: 'The ID of the channel',
 	},
+
 	/* -------------------------------------------------------------------------- */
 	/*                                 channel:getAll                             */
 	/* -------------------------------------------------------------------------- */
 	{
-		displayName: 'Workspace ID',
+		displayName: 'Workspace Name or ID',
 		name: 'workspaceId',
 		type: 'options',
 		typeOptions: {
@@ -228,16 +233,13 @@ export const channelFields = [
 		default: '',
 		displayOptions: {
 			show: {
-				operation: [
-					'getAll',
-				],
-				resource: [
-					'channel',
-				],
+				operation: ['getAll'],
+				resource: ['channel'],
 			},
 		},
 		required: true,
-		description: 'The ID of the workspace.',
+		description:
+			'The ID of the workspace. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code-examples/expressions/">expression</a>.',
 	},
 	{
 		displayName: 'Return All',
@@ -245,16 +247,12 @@ export const channelFields = [
 		type: 'boolean',
 		displayOptions: {
 			show: {
-				resource: [
-					'channel',
-				],
-				operation: [
-					'getAll',
-				],
+				resource: ['channel'],
+				operation: ['getAll'],
 			},
 		},
 		default: false,
-		description: 'If all results should be returned or only up to a given limit.',
+		description: 'Whether to return all results or only up to a given limit',
 	},
 	{
 		displayName: 'Limit',
@@ -262,15 +260,9 @@ export const channelFields = [
 		type: 'number',
 		displayOptions: {
 			show: {
-				resource: [
-					'channel',
-				],
-				operation: [
-					'getAll',
-				],
-				returnAll: [
-					false,
-				],
+				resource: ['channel'],
+				operation: ['getAll'],
+				returnAll: [false],
 			},
 		},
 		typeOptions: {
@@ -278,7 +270,7 @@ export const channelFields = [
 			maxValue: 100,
 		},
 		default: 50,
-		description: 'How many results to return.',
+		description: 'Max number of results to return',
 	},
 	{
 		displayName: 'Filters',
@@ -288,12 +280,8 @@ export const channelFields = [
 		default: {},
 		displayOptions: {
 			show: {
-				resource: [
-					'channel',
-				],
-				operation: [
-					'getAll',
-				],
+				resource: ['channel'],
+				operation: ['getAll'],
 			},
 		},
 		options: [
@@ -302,7 +290,7 @@ export const channelFields = [
 				name: 'archived',
 				type: 'boolean',
 				default: false,
-				description: 'If enabled, only archived conversations are returned',
+				description: 'Whether only archived conversations are returned',
 			},
 		],
 	},
@@ -317,16 +305,12 @@ export const channelFields = [
 		default: '',
 		displayOptions: {
 			show: {
-				operation: [
-					'update',
-				],
-				resource: [
-					'channel',
-				],
+				operation: ['update'],
+				resource: ['channel'],
 			},
 		},
 		required: true,
-		description: 'The ID of the channel.',
+		description: 'The ID of the channel',
 	},
 	{
 		displayName: 'Update Fields',
@@ -336,12 +320,8 @@ export const channelFields = [
 		default: {},
 		displayOptions: {
 			show: {
-				resource: [
-					'channel',
-				],
-				operation: [
-					'update',
-				],
+				resource: ['channel'],
+				operation: ['update'],
 			},
 		},
 		options: [
@@ -421,8 +401,8 @@ export const channelFields = [
 				name: 'public',
 				type: 'boolean',
 				default: false,
-				description: 'If enabled, the channel will be marked as public',
+				description: 'Whether the channel will be marked as public',
 			},
 		],
 	},
-] as INodeProperties[];
+];

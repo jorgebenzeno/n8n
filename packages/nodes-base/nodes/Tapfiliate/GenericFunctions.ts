@@ -1,20 +1,25 @@
-import {
-	OptionsWithUri,
-} from 'request';
+import type { OptionsWithUri } from 'request';
 
-import {
+import type {
+	IDataObject,
 	IExecuteFunctions,
-	IExecuteSingleFunctions,
 	IHookFunctions,
 	ILoadOptionsFunctions,
-} from 'n8n-core';
-
-import {
-	IDataObject,
+	JsonObject,
 } from 'n8n-workflow';
+import { NodeApiError } from 'n8n-workflow';
 
-export async function tapfiliateApiRequest(this: IHookFunctions | IExecuteFunctions | IExecuteSingleFunctions | ILoadOptionsFunctions, method: string, endpoint: string, body: any = {}, qs: IDataObject = {}, uri?: string | undefined, option: IDataObject = {}): Promise<any> { // tslint:disable-line:no-any
-	const credentials = this.getCredentials('tapfiliateApi') as IDataObject;
+export async function tapfiliateApiRequest(
+	this: IHookFunctions | IExecuteFunctions | ILoadOptionsFunctions,
+	method: string,
+	endpoint: string,
+
+	body: IDataObject = {},
+	qs: IDataObject = {},
+	uri?: string | undefined,
+	option: IDataObject = {},
+) {
+	const credentials = await this.getCredentials('tapfiliateApi');
 
 	const options: OptionsWithUri = {
 		headers: {
@@ -35,30 +40,20 @@ export async function tapfiliateApiRequest(this: IHookFunctions | IExecuteFuncti
 		Object.assign(options, option);
 	}
 	try {
-		return await this.helpers.request!(options);
+		return await this.helpers.request(options);
 	} catch (error) {
-		if (error.statusCode === 404) {
-			throw new Error(
-				`Tapfiliate error response [${error.statusCode}]: Not Found`,
-			);
-		}
-
-		if (error.response && error.response.body && error.response.body.errors) {
-
-			let errors = error.response.body.errors;
-
-			errors = errors.map((e: IDataObject) => e.message);
-			// Try to return the error prettier
-			throw new Error(
-				`Tapfiliate error response [${error.statusCode}]: ${errors.join('|')}`,
-			);
-		}
-		throw error;
+		throw new NodeApiError(this.getNode(), error as JsonObject);
 	}
 }
 
-export async function tapfiliateApiRequestAllItems(this: IExecuteFunctions | ILoadOptionsFunctions, method: string, endpoint: string, body: any = {}, query: IDataObject = {}): Promise<any> { // tslint:disable-line:no-any
+export async function tapfiliateApiRequestAllItems(
+	this: IExecuteFunctions | ILoadOptionsFunctions,
+	method: string,
+	endpoint: string,
 
+	body: IDataObject = {},
+	query: IDataObject = {},
+) {
 	const returnData: IDataObject[] = [];
 
 	let responseData;
@@ -66,13 +61,12 @@ export async function tapfiliateApiRequestAllItems(this: IExecuteFunctions | ILo
 	query.page = 1;
 
 	do {
-		responseData = await tapfiliateApiRequest.call(this, method, endpoint, body, query, '', { resolveWithFullResponse: true });
-		returnData.push.apply(returnData, responseData.body);
+		responseData = await tapfiliateApiRequest.call(this, method, endpoint, body, query, '', {
+			resolveWithFullResponse: true,
+		});
+		returnData.push.apply(returnData, responseData.body as IDataObject[]);
 		query.page++;
-
-	} while (
-		responseData.headers.link.includes('next')
-	);
+	} while (responseData.headers.link.includes('next'));
 
 	return returnData;
 }

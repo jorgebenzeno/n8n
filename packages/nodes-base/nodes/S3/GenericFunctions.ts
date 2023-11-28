@@ -1,44 +1,47 @@
-import {
-	sign,
-} from 'aws4';
+import { URL } from 'url';
+import type { Request } from 'aws4';
+import { sign } from 'aws4';
 
-import {
-	get,
-} from 'lodash';
+import get from 'lodash/get';
 
-import {
-	OptionsWithUri,
-} from 'request';
+import type { OptionsWithUri } from 'request';
 
-import {
-	parseString,
-} from 'xml2js';
+import { parseString } from 'xml2js';
 
-import {
+import type {
+	IDataObject,
 	IExecuteFunctions,
 	IHookFunctions,
 	ILoadOptionsFunctions,
 	IWebhookFunctions,
-} from 'n8n-core';
-
-import {
-	IDataObject,
+	JsonObject,
 } from 'n8n-workflow';
+import { NodeApiError, NodeOperationError } from 'n8n-workflow';
 
-import { URL } from 'url';
+function queryToString(params: IDataObject) {
+	return Object.keys(params)
+		.map((key) => key + '=' + (params[key] as string))
+		.join('&');
+}
 
-export async function s3ApiRequest(this: IHookFunctions | IExecuteFunctions | ILoadOptionsFunctions | IWebhookFunctions, bucket: string, method: string, path: string, body?: string | Buffer, query: IDataObject = {}, headers?: object, option: IDataObject = {}, region?: string): Promise<any> { // tslint:disable-line:no-any
-
-	let credentials;
-
-	credentials = this.getCredentials('s3');
-
-	if (credentials === undefined) {
-		throw new Error('No credentials got returned!');
-	}
+export async function s3ApiRequest(
+	this: IHookFunctions | IExecuteFunctions | ILoadOptionsFunctions | IWebhookFunctions,
+	bucket: string,
+	method: string,
+	path: string,
+	body?: string | Buffer,
+	query: IDataObject = {},
+	headers?: object,
+	option: IDataObject = {},
+	region?: string,
+): Promise<any> {
+	const credentials = await this.getCredentials('s3');
 
 	if (!(credentials.endpoint as string).startsWith('http')) {
-		throw new Error('HTTP(S) Scheme is required in endpoint definition');
+		throw new NodeOperationError(
+			this.getNode(),
+			'HTTP(S) Scheme is required in endpoint definition',
+		);
 	}
 
 	const endpoint = new URL(credentials.endpoint as string);
@@ -62,9 +65,17 @@ export async function s3ApiRequest(this: IHookFunctions | IExecuteFunctions | IL
 		path: `${path}?${queryToString(query).replace(/\+/g, '%2B')}`,
 		service: 's3',
 		body,
+	} as Request;
+
+	const securityHeaders = {
+		accessKeyId: `${credentials.accessKeyId}`.trim(),
+		secretAccessKey: `${credentials.secretAccessKey}`.trim(),
+		sessionToken: credentials.temporaryCredentials
+			? `${credentials.sessionToken}`.trim()
+			: undefined,
 	};
 
-	sign(signOpts, { accessKeyId: `${credentials.accessKeyId}`.trim(), secretAccessKey: `${credentials.secretAccessKey}`.trim() });
+	sign(signOpts, securityHeaders);
 
 	const options: OptionsWithUri = {
 		headers: signOpts.headers,
@@ -78,68 +89,122 @@ export async function s3ApiRequest(this: IHookFunctions | IExecuteFunctions | IL
 		Object.assign(options, option);
 	}
 	try {
-		return await this.helpers.request!(options);
+		return await this.helpers.request(options);
 	} catch (error) {
-		const errorMessage = error.response?.body.message || error.response?.body.Message || error.message;
-
-		if (error.statusCode === 403) {
-			if (errorMessage === 'The security token included in the request is invalid.') {
-				throw new Error('The S3 credentials are not valid!');
-			} else if (errorMessage.startsWith('The request signature we calculated does not match the signature you provided')) {
-				throw new Error('The S3 credentials are not valid!');
-			}
-		}
-
-		throw new Error(`S3 error response [${error.statusCode}]: ${errorMessage}`);
+		throw new NodeApiError(this.getNode(), error as JsonObject);
 	}
 }
 
-export async function s3ApiRequestREST(this: IHookFunctions | IExecuteFunctions | ILoadOptionsFunctions, bucket: string, method: string, path: string, body?: string, query: IDataObject = {}, headers?: object, options: IDataObject = {}, region?: string): Promise<any> { // tslint:disable-line:no-any
-	const response = await s3ApiRequest.call(this, bucket, method, path, body, query, headers, options, region);
+export async function s3ApiRequestREST(
+	this: IHookFunctions | IExecuteFunctions | ILoadOptionsFunctions,
+	bucket: string,
+	method: string,
+	path: string,
+	body?: string,
+	query: IDataObject = {},
+	headers?: object,
+	options: IDataObject = {},
+	region?: string,
+): Promise<any> {
+	const response = await s3ApiRequest.call(
+		this,
+		bucket,
+		method,
+		path,
+		body,
+		query,
+		headers,
+		options,
+		region,
+	);
 	try {
-		return JSON.parse(response);
-	} catch (e) {
+		return JSON.parse(response as string);
+	} catch (error) {
 		return response;
 	}
 }
 
-export async function s3ApiRequestSOAP(this: IHookFunctions | IExecuteFunctions | ILoadOptionsFunctions | IWebhookFunctions, bucket: string, method: string, path: string, body?: string | Buffer, query: IDataObject = {}, headers?: object, option: IDataObject = {}, region?: string): Promise<any> { // tslint:disable-line:no-any
-	const response = await s3ApiRequest.call(this, bucket, method, path, body, query, headers, option, region);
+export async function s3ApiRequestSOAP(
+	this: IHookFunctions | IExecuteFunctions | ILoadOptionsFunctions | IWebhookFunctions,
+	bucket: string,
+	method: string,
+	path: string,
+	body?: string | Buffer,
+	query: IDataObject = {},
+	headers?: object,
+	option: IDataObject = {},
+	region?: string,
+): Promise<any> {
+	const response = await s3ApiRequest.call(
+		this,
+		bucket,
+		method,
+		path,
+		body,
+		query,
+		headers,
+		option,
+		region,
+	);
 	try {
 		return await new Promise((resolve, reject) => {
-			parseString(response, { explicitArray: false }, (err, data) => {
+			parseString(response as string, { explicitArray: false }, (err, data) => {
 				if (err) {
 					return reject(err);
 				}
 				resolve(data);
 			});
 		});
-	} catch (e) {
-		return e;
+	} catch (error) {
+		return error;
 	}
 }
 
-export async function s3ApiRequestSOAPAllItems(this: IHookFunctions | IExecuteFunctions | ILoadOptionsFunctions | IWebhookFunctions, propertyName: string, service: string, method: string, path: string, body?: string, query: IDataObject = {}, headers: IDataObject = {}, option: IDataObject = {}, region?: string): Promise<any> { // tslint:disable-line:no-any
-
+export async function s3ApiRequestSOAPAllItems(
+	this: IHookFunctions | IExecuteFunctions | ILoadOptionsFunctions | IWebhookFunctions,
+	propertyName: string,
+	service: string,
+	method: string,
+	path: string,
+	body?: string,
+	query: IDataObject = {},
+	headers: IDataObject = {},
+	option: IDataObject = {},
+	region?: string,
+): Promise<any> {
 	const returnData: IDataObject[] = [];
 
 	let responseData;
 
 	do {
-		responseData = await s3ApiRequestSOAP.call(this, service, method, path, body, query, headers, option, region);
+		responseData = await s3ApiRequestSOAP.call(
+			this,
+			service,
+			method,
+			path,
+			body,
+			query,
+			headers,
+			option,
+			region,
+		);
 
 		//https://forums.aws.amazon.com/thread.jspa?threadID=55746
 		if (get(responseData, `${propertyName.split('.')[0]}.NextContinuationToken`)) {
-			query['continuation-token'] = get(responseData, `${propertyName.split('.')[0]}.NextContinuationToken`);
+			query['continuation-token'] = get(
+				responseData,
+				`${propertyName.split('.')[0]}.NextContinuationToken`,
+			);
 		}
 		if (get(responseData, propertyName)) {
 			if (Array.isArray(get(responseData, propertyName))) {
-				returnData.push.apply(returnData, get(responseData, propertyName));
+				returnData.push.apply(returnData, get(responseData, propertyName) as IDataObject[]);
 			} else {
-				returnData.push(get(responseData, propertyName));
+				returnData.push(get(responseData, propertyName) as IDataObject);
 			}
 		}
-		if (query.limit && query.limit <= returnData.length) {
+		const limit = query.limit as number | undefined;
+		if (limit && limit <= returnData.length) {
 			return returnData;
 		}
 	} while (
@@ -148,8 +213,4 @@ export async function s3ApiRequestSOAPAllItems(this: IHookFunctions | IExecuteFu
 	);
 
 	return returnData;
-}
-
-function queryToString(params: IDataObject) {
-	return Object.keys(params).map(key => key + '=' + params[key]).join('&');
 }

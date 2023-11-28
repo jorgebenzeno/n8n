@@ -1,42 +1,58 @@
-import {
-	INodeProperties,
-} from 'n8n-workflow';
+import type { INodeProperties } from 'n8n-workflow';
 
-export const projectOperations = [
+export const projectOperations: INodeProperties[] = [
 	{
 		displayName: 'Operation',
 		name: 'operation',
 		type: 'options',
+		noDataExpression: true,
 		displayOptions: {
 			show: {
-				resource: [
-					'project',
-				],
+				resource: ['project'],
 			},
 		},
 		options: [
 			{
+				name: 'Create',
+				value: 'create',
+				description: 'Create a new project',
+				action: 'Create a project',
+			},
+			{
+				name: 'Delete',
+				value: 'delete',
+				description: 'Delete a project',
+				action: 'Delete a project',
+			},
+			{
 				name: 'Get',
 				value: 'get',
 				description: 'Get project by ID',
+				action: 'Get a project',
 			},
 			{
-				name: 'Get All',
+				name: 'Get Many',
 				value: 'getAll',
-				description: 'Get all projects',
+				description: 'Get many projects',
+				action: 'Get many projects',
+			},
+			{
+				name: 'Update',
+				value: 'update',
+				description: 'Update a project',
+				action: 'Update a project',
 			},
 		],
 		default: 'get',
-		description: 'The operation to perform',
 	},
-] as INodeProperties[];
+];
 
-export const projectFields = [
+export const projectFields: INodeProperties[] = [
 	/* -------------------------------------------------------------------------- */
 	/*                                project:create/get                          */
 	/* -------------------------------------------------------------------------- */
 	{
-		displayName: 'Organization Slug',
+		displayName: 'Organization Slug Name or ID',
 		name: 'organizationSlug',
 		type: 'options',
 		typeOptions: {
@@ -45,63 +61,51 @@ export const projectFields = [
 		default: '',
 		displayOptions: {
 			show: {
-				resource: [
-					'project',
-				],
-				operation: [
-					'create',
-					'get',
-					'update',
-					'delete',
-				],
+				resource: ['project'],
+				operation: ['create', 'get'],
 			},
 		},
 		required: true,
-		description: 'The slug of the organization the events belong to',
+		description:
+			'The slug of the organization the events belong to. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code-examples/expressions/">expression</a>.',
 	},
 	{
-		displayName: 'Project Slug',
+		displayName: 'Project Slug Name or ID',
 		name: 'projectSlug',
 		type: 'options',
 		typeOptions: {
 			loadOptionsMethod: 'getProjects',
-			loadOptionsDependsOn: [
-				'organizationSlug',
-			],
+			loadOptionsDependsOn: ['organizationSlug'],
 		},
 		default: '',
 		displayOptions: {
 			show: {
-				resource: [
-					'project',
-				],
-				operation: [
-					'get',
-				],
+				resource: ['project'],
+				operation: ['get'],
 			},
 		},
 		required: true,
-		description: 'The slug of the project to retrieve',
+		description:
+			'The slug of the project to retrieve. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code-examples/expressions/">expression</a>.',
 	},
 	{
-		displayName: 'Team Slug',
+		displayName: 'Team Slug Name or ID',
 		name: 'teamSlug',
-		type: 'string',
+		type: 'options',
+		typeOptions: {
+			loadOptionsMethod: 'getTeams',
+			loadOptionsDependsOn: ['organizationSlug'],
+		},
 		default: '',
 		displayOptions: {
 			show: {
-				resource: [
-					'project',
-				],
-				operation: [
-					'create',
-					'update',
-					'delete',
-				],
+				resource: ['project'],
+				operation: ['create'],
 			},
 		},
 		required: true,
-		description: 'The slug of the team to create a new project for',
+		description:
+			'The slug of the team to create a new project for. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code-examples/expressions/">expression</a>.',
 	},
 	{
 		displayName: 'Name',
@@ -110,12 +114,8 @@ export const projectFields = [
 		default: '',
 		displayOptions: {
 			show: {
-				resource: [
-					'project',
-				],
-				operation: [
-					'create',
-				],
+				resource: ['project'],
+				operation: ['create'],
 			},
 		},
 		required: true,
@@ -129,12 +129,8 @@ export const projectFields = [
 		default: {},
 		displayOptions: {
 			show: {
-				resource: [
-					'project',
-				],
-				operation: [
-					'create',
-				],
+				resource: ['project'],
+				operation: ['create'],
 			},
 		},
 		options: [
@@ -143,10 +139,12 @@ export const projectFields = [
 				name: 'slug',
 				type: 'string',
 				default: '',
-				description: 'Optionally a slug for the new project. If it’s not provided a slug is generated from the name',
+				description:
+					'Optionally a slug for the new project. If it’s not provided a slug is generated from the name.',
 			},
 		],
 	},
+
 	/* -------------------------------------------------------------------------- */
 	/*                                project:getAll                              */
 	/* -------------------------------------------------------------------------- */
@@ -156,16 +154,12 @@ export const projectFields = [
 		type: 'boolean',
 		displayOptions: {
 			show: {
-				operation: [
-					'getAll',
-				],
-				resource: [
-					'project',
-				],
+				operation: ['getAll'],
+				resource: ['project'],
 			},
 		},
 		default: false,
-		description: 'If all results should be returned or only up to a given limit',
+		description: 'Whether to return all results or only up to a given limit',
 	},
 	{
 		displayName: 'Limit',
@@ -173,15 +167,9 @@ export const projectFields = [
 		type: 'number',
 		displayOptions: {
 			show: {
-				operation: [
-					'getAll',
-				],
-				resource: [
-					'project',
-				],
-				returnAll: [
-					false,
-				],
+				operation: ['getAll'],
+				resource: ['project'],
+				returnAll: [false],
 			},
 		},
 		typeOptions: {
@@ -189,6 +177,153 @@ export const projectFields = [
 			maxValue: 500,
 		},
 		default: 100,
-		description: 'How many results to return',
+		description: 'Max number of results to return',
 	},
-] as INodeProperties[];
+
+	/* -------------------------------------------------------------------------- */
+	/*                                project:update                              */
+	/* -------------------------------------------------------------------------- */
+	{
+		displayName: 'Organization Slug Name or ID',
+		name: 'organizationSlug',
+		type: 'options',
+		typeOptions: {
+			loadOptionsMethod: 'getOrganizations',
+		},
+		default: '',
+		displayOptions: {
+			show: {
+				resource: ['project'],
+				operation: ['update'],
+			},
+		},
+		required: true,
+		description:
+			'The slug of the organization the project belong to. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code-examples/expressions/">expression</a>.',
+	},
+	{
+		displayName: 'Project Slug Name or ID',
+		name: 'projectSlug',
+		type: 'options',
+		typeOptions: {
+			loadOptionsMethod: 'getProjects',
+			loadOptionsDependsOn: ['organizationSlug'],
+		},
+		default: '',
+		displayOptions: {
+			show: {
+				resource: ['project'],
+				operation: ['update'],
+			},
+		},
+		required: true,
+		description:
+			'The slug of the project to update. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code-examples/expressions/">expression</a>.',
+	},
+	{
+		displayName: 'Update Fields',
+		name: 'updateFields',
+		type: 'collection',
+		placeholder: 'Add Field',
+		default: {},
+		displayOptions: {
+			show: {
+				resource: ['project'],
+				operation: ['update'],
+			},
+		},
+		options: [
+			{
+				displayName: 'Bookmarked',
+				name: 'isBookmarked',
+				type: 'boolean',
+				default: false,
+				// eslint-disable-next-line n8n-nodes-base/node-param-description-boolean-without-whether
+				description: 'The new platform for the updated project',
+			},
+			{
+				displayName: 'Digests Maximum Delay',
+				name: 'digestsMaxDelay',
+				type: 'number',
+				default: 1800,
+				description: 'Maximum interval to digest alerts',
+			},
+			{
+				displayName: 'Digests Minimun Delay',
+				name: 'digestsMinDelay',
+				type: 'number',
+				default: 60,
+				description: 'Minium interval to digest alerts',
+			},
+			{
+				displayName: 'Name',
+				name: 'name',
+				type: 'string',
+				default: '',
+				description: 'The new name for the updated project',
+			},
+			{
+				displayName: 'Slug',
+				name: 'slug',
+				type: 'string',
+				default: '',
+				description: 'The new slug for the updated project',
+			},
+			{
+				displayName: 'Team',
+				name: 'team',
+				type: 'string',
+				default: '',
+				description: 'The new team name',
+			},
+			{
+				displayName: 'Platform',
+				name: 'platform',
+				type: 'string',
+				default: '',
+				description: 'The new platform for the updated project',
+			},
+		],
+	},
+
+	/* -------------------------------------------------------------------------- */
+	/*                                project:delete                              */
+	/* -------------------------------------------------------------------------- */
+	{
+		displayName: 'Organization Slug Name or ID',
+		name: 'organizationSlug',
+		type: 'options',
+		typeOptions: {
+			loadOptionsMethod: 'getOrganizations',
+		},
+		default: '',
+		displayOptions: {
+			show: {
+				resource: ['project'],
+				operation: ['delete'],
+			},
+		},
+		required: true,
+		description:
+			'The slug of the organization the project belong to. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code-examples/expressions/">expression</a>.',
+	},
+	{
+		displayName: 'Project Slug Name or ID',
+		name: 'projectSlug',
+		type: 'options',
+		typeOptions: {
+			loadOptionsMethod: 'getProjects',
+			loadOptionsDependsOn: ['organizationSlug'],
+		},
+		default: '',
+		displayOptions: {
+			show: {
+				resource: ['project'],
+				operation: ['delete'],
+			},
+		},
+		required: true,
+		description:
+			'The slug of the project to delete. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code-examples/expressions/">expression</a>.',
+	},
+];

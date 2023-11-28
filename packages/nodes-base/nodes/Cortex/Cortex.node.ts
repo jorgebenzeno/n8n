@@ -1,53 +1,24 @@
-import {
-	BINARY_ENCODING,
-	IExecuteFunctions,
-} from 'n8n-core';
-
-import {
-	cortexApiRequest,
-	getEntityLabel,
-	prepareParameters,
-	splitTags,
-} from './GenericFunctions';
-
-import {
-	analyzerFields,
-	analyzersOperations,
-} from './AnalyzerDescriptions';
-
-import {
-	IBinaryData,
+import { createHash } from 'crypto';
+import type {
 	IDataObject,
+	IExecuteFunctions,
 	ILoadOptionsFunctions,
 	INodeExecutionData,
 	INodePropertyOptions,
 	INodeType,
 	INodeTypeDescription,
 } from 'n8n-workflow';
-
-import {
-	responderFields,
-	respondersOperations,
-} from './ResponderDescription';
-
-import {
-	jobFields,
-	jobOperations,
-} from './JobDescription';
-
-import {
-	upperFirst,
-} from 'lodash';
-
-import {
-	IJob,
-} from './AnalyzerInterface';
-
-import {
-	createHash,
-} from 'crypto';
-
+import upperFirst from 'lodash/upperFirst';
 import * as changeCase from 'change-case';
+import { cortexApiRequest, getEntityLabel, prepareParameters, splitTags } from './GenericFunctions';
+
+import { analyzerFields, analyzersOperations } from './AnalyzerDescriptions';
+
+import { responderFields, respondersOperations } from './ResponderDescription';
+
+import { jobFields, jobOperations } from './JobDescription';
+
+import type { IJob } from './AnalyzerInterface';
 
 export class Cortex implements INodeType {
 	description: INodeTypeDescription = {
@@ -55,12 +26,11 @@ export class Cortex implements INodeType {
 		name: 'cortex',
 		icon: 'file:cortex.svg',
 		group: ['transform'],
-		subtitle: '={{$parameter["resource"]+ ": " + $parameter["operation"]}}',
+		subtitle: '={{$parameter["operation"]+ ": " + $parameter["resource"]}}',
 		version: 1,
 		description: 'Apply the Cortex analyzer/responder on the given entity',
 		defaults: {
 			name: 'Cortex',
-			color: '#54c4c3',
 		},
 		inputs: ['main'],
 		outputs: ['main'],
@@ -77,6 +47,7 @@ export class Cortex implements INodeType {
 				displayName: 'Resource',
 				name: 'resource',
 				type: 'options',
+				noDataExpression: true,
 				options: [
 					{
 						name: 'Analyzer',
@@ -106,13 +77,12 @@ export class Cortex implements INodeType {
 
 	methods = {
 		loadOptions: {
-
 			async loadActiveAnalyzers(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
 				// request the enabled analyzers from instance
 				const requestResult = await cortexApiRequest.call(
 					this,
 					'POST',
-					`/analyzer/_search`,
+					'/analyzer/_search?range=all',
 				);
 
 				const returnData: INodePropertyOptions[] = [];
@@ -130,11 +100,7 @@ export class Cortex implements INodeType {
 
 			async loadActiveResponders(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
 				// request the enabled responders from instance
-				const requestResult = await cortexApiRequest.call(
-					this,
-					'GET',
-					`/responder`,
-				);
+				const requestResult = await cortexApiRequest.call(this, 'GET', '/responder');
 
 				const returnData: INodePropertyOptions[] = [];
 				for (const responder of requestResult) {
@@ -159,12 +125,10 @@ export class Cortex implements INodeType {
 				// parse supported observable types  into options
 				const returnData: INodePropertyOptions[] = [];
 				for (const dataType of requestResult.dataTypeList) {
-					returnData.push(
-						{
-							name: upperFirst(dataType as string),
-							value: dataType as string,
-						},
-					);
+					returnData.push({
+						name: upperFirst(dataType as string),
+						value: dataType as string,
+					});
 				}
 				return returnData;
 			},
@@ -180,287 +144,244 @@ export class Cortex implements INodeType {
 				// parse the accepted dataType into options
 				const returnData: INodePropertyOptions[] = [];
 				for (const dataType of requestResult.dataTypeList) {
-					returnData.push(
-						{
-							value: (dataType as string).split(':')[1],
-							name: changeCase.capitalCase((dataType as string).split(':')[1]),
-						},
-					);
+					returnData.push({
+						value: (dataType as string).split(':')[1],
+						name: changeCase.capitalCase((dataType as string).split(':')[1]),
+					});
 				}
 				return returnData;
 			},
-
 		},
 	};
 
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
 		const items = this.getInputData();
 		const returnData: IDataObject[] = [];
-		const length = (items.length as unknown) as number;
-		const qs: IDataObject = {};
+		const length = items.length;
 		let responseData;
-		const resource = this.getNodeParameter('resource', 0) as string;
-		const operation = this.getNodeParameter('operation', 0) as string;
+		const resource = this.getNodeParameter('resource', 0);
+		const operation = this.getNodeParameter('operation', 0);
 
 		for (let i = 0; i < length; i++) {
-			if (resource === 'analyzer') {
-				//https://github.com/TheHive-Project/CortexDocs/blob/master/api/api-guide.md#run
-				if (operation === 'execute') {
+			try {
+				if (resource === 'analyzer') {
+					//https://github.com/TheHive-Project/CortexDocs/blob/master/api/api-guide.md#run
+					if (operation === 'execute') {
+						let force = false;
 
-					let force = false;
+						const analyzer = this.getNodeParameter('analyzer', i) as string;
 
-					const analyzer = this.getNodeParameter('analyzer', i) as string;
+						const observableType = this.getNodeParameter('observableType', i) as string;
 
-					const observableType = this.getNodeParameter('observableType', i) as string;
+						const additionalFields = this.getNodeParameter('additionalFields', i);
 
-					const additionalFields = this.getNodeParameter('additionalFields', i) as IDataObject;
+						const tlp = this.getNodeParameter('tlp', i) as string;
 
-					const tlp = this.getNodeParameter('tlp', i) as string;
+						const body: IDataObject = {
+							dataType: observableType,
+							tlp,
+						};
 
-					const body: IDataObject = {
-						dataType: observableType,
-						tlp,
-					};
-
-					if (additionalFields.force === true) {
-						force = true;
-					}
-
-					if (observableType === 'file') {
-
-						const item = items[i];
-
-						if (item.binary === undefined) {
-							throw new Error('No binary data exists on item!');
+						if (additionalFields.force === true) {
+							force = true;
 						}
 
-						const binaryPropertyName = this.getNodeParameter('binaryPropertyName', i) as string;
+						if (observableType === 'file') {
+							const binaryPropertyName = this.getNodeParameter('binaryPropertyName', i);
+							const binaryData = this.helpers.assertBinaryData(i, binaryPropertyName);
+							const fileBufferData = await this.helpers.getBinaryDataBuffer(i, binaryPropertyName);
 
-						if (item.binary[binaryPropertyName] === undefined) {
-							throw new Error(`No binary data property "${binaryPropertyName}" does not exists on item!`);
-						}
-
-						const fileBufferData = Buffer.from(item.binary[binaryPropertyName].data, BINARY_ENCODING);
-
-						const options = {
-							formData: {
-								data: {
-									value: fileBufferData,
-									options: {
-										contentType: item.binary[binaryPropertyName].mimeType,
-										filename: item.binary[binaryPropertyName].fileName,
+							const options = {
+								formData: {
+									data: {
+										value: fileBufferData,
+										options: {
+											contentType: binaryData.mimeType,
+											filename: binaryData.fileName,
+										},
 									},
+									_json: JSON.stringify({
+										dataType: observableType,
+										tlp,
+									}),
 								},
-								_json: JSON.stringify({
-									dataType: observableType,
-									tlp,
-								}),
-							},
-						};
+							};
 
-						responseData = await cortexApiRequest.call(
-							this,
-							'POST',
-							`/analyzer/${analyzer.split('::')[0]}/run`,
-							{},
-							{ force },
-							'',
-							options,
-						) as IJob;
+							responseData = (await cortexApiRequest.call(
+								this,
+								'POST',
+								`/analyzer/${analyzer.split('::')[0]}/run`,
+								{},
+								{ force },
+								'',
+								options,
+							)) as IJob;
 
-						continue;
+							continue;
+						} else {
+							const observableValue = this.getNodeParameter('observableValue', i) as string;
 
-					} else {
-						const observableValue = this.getNodeParameter('observableValue', i) as string;
+							body.data = observableValue;
 
-						body.data = observableValue;
+							responseData = (await cortexApiRequest.call(
+								this,
+								'POST',
+								`/analyzer/${analyzer.split('::')[0]}/run`,
+								body,
+								{ force },
+							)) as IJob;
+						}
 
-						responseData = await cortexApiRequest.call(
-							this,
-							'POST',
-							`/analyzer/${analyzer.split('::')[0]}/run`,
-							body,
-							{ force },
-						) as IJob;
-					}
-
-					if (additionalFields.timeout) {
-						responseData = await cortexApiRequest.call(
-							this,
-							'GET',
-							`/job/${responseData.id}/waitreport`,
-							{},
-							{ atMost: `${additionalFields.timeout}second` },
-						);
+						if (additionalFields.timeout) {
+							responseData = await cortexApiRequest.call(
+								this,
+								'GET',
+								`/job/${responseData.id}/waitreport`,
+								{},
+								{ atMost: `${additionalFields.timeout}second` },
+							);
+						}
 					}
 				}
-			}
 
-			if (resource === 'job') {
-				//https://github.com/TheHive-Project/CortexDocs/blob/master/api/api-guide.md#get-details-1
-				if (operation === 'get') {
+				if (resource === 'job') {
+					//https://github.com/TheHive-Project/CortexDocs/blob/master/api/api-guide.md#get-details-1
+					if (operation === 'get') {
+						const jobId = this.getNodeParameter('jobId', i) as string;
 
-					const jobId = this.getNodeParameter('jobId', i) as string;
+						responseData = await cortexApiRequest.call(this, 'GET', `/job/${jobId}`);
+					}
+					//https://github.com/TheHive-Project/CortexDocs/blob/master/api/api-guide.md#get-details-and-report
+					if (operation === 'report') {
+						const jobId = this.getNodeParameter('jobId', i) as string;
 
-					responseData = await cortexApiRequest.call(
-						this,
-						'GET',
-						`/job/${jobId}`,
-					);
+						responseData = await cortexApiRequest.call(this, 'GET', `/job/${jobId}/report`);
+					}
 				}
-				//https://github.com/TheHive-Project/CortexDocs/blob/master/api/api-guide.md#get-details-and-report
-				if (operation === 'report') {
 
-					const jobId = this.getNodeParameter('jobId', i) as string;
+				if (resource === 'responder') {
+					if (operation === 'execute') {
+						const responderId = (this.getNodeParameter('responder', i) as string).split('::')[0];
 
-					responseData = await cortexApiRequest.call(
-						this,
-						'GET',
-						`/job/${jobId}/report`,
-					);
-				}
-			}
+						const entityType = this.getNodeParameter('entityType', i) as string;
 
-			if (resource === 'responder') {
-				if (operation === 'execute') {
-					const responderId = (this.getNodeParameter('responder', i) as string).split('::')[0];
+						const isJSON = this.getNodeParameter('jsonObject', i) as boolean;
+						let body: IDataObject;
 
-					const entityType = this.getNodeParameter('entityType', i) as string;
+						if (isJSON) {
+							const entityJson = JSON.parse(this.getNodeParameter('objectData', i) as string);
 
-					const isJSON = this.getNodeParameter('jsonObject', i) as boolean;
-					let body: IDataObject;
+							body = {
+								responderId,
+								label: getEntityLabel(entityJson as IDataObject),
+								dataType: `thehive:${entityType}`,
+								data: entityJson,
+								tlp: entityJson.tlp || 2,
+								pap: entityJson.pap || 2,
+								message: entityJson.message || '',
+								parameters: [],
+							};
+						} else {
+							const values = (this.getNodeParameter('parameters', i) as IDataObject)
+								.values as IDataObject;
 
+							body = {
+								responderId,
+								dataType: `thehive:${entityType}`,
+								data: {
+									_type: entityType,
+									...prepareParameters(values),
+								},
+							};
+							if (entityType === 'alert') {
+								// deal with alert artifacts
+								const artifacts = (body.data as IDataObject).artifacts as IDataObject;
 
-					if (isJSON) {
-						const entityJson = JSON.parse(this.getNodeParameter('objectData', i) as string);
+								if (artifacts) {
+									const artifactValues = artifacts.artifactValues as IDataObject[];
 
-						body = {
-							responderId,
-							label: getEntityLabel(entityJson),
-							dataType: `thehive:${entityType}`,
-							data: entityJson,
-							tlp: entityJson.tlp || 2,
-							pap: entityJson.pap || 2,
-							message: entityJson.message || '',
-							parameters: [],
-						};
+									if (artifactValues) {
+										const artifactData = [];
 
-					} else {
+										for (const artifactvalue of artifactValues) {
+											const element: IDataObject = {};
 
-						const values = (this.getNodeParameter('parameters', i) as IDataObject).values as IDataObject;
+											element.message = artifactvalue.message as string;
 
-						body = {
-							responderId,
-							dataType: `thehive:${entityType}`,
-							data: {
-								_type: entityType,
-								...prepareParameters(values),
-							},
-						};
-						if (entityType === 'alert') {
-							// deal with alert artifacts
-							const artifacts = (body.data as IDataObject).artifacts as IDataObject;
+											element.tags = splitTags(artifactvalue.tags as string);
 
-							if (artifacts) {
+											element.dataType = artifactvalue.dataType as string;
 
-								const artifactValues = (artifacts as IDataObject).artifactValues as IDataObject[];
+											element.data = artifactvalue.data as string;
 
-								if (artifactValues) {
+											if (artifactvalue.dataType === 'file') {
+												const binaryPropertyName = artifactvalue.binaryProperty as string;
+												const binaryData = this.helpers.assertBinaryData(i, binaryPropertyName);
 
-									const artifactData = [];
-
-									for (const artifactvalue of artifactValues) {
-
-										const element: IDataObject = {};
-
-										element.message = artifactvalue.message as string;
-
-										element.tags = splitTags(artifactvalue.tags as string) as string[];
-
-										element.dataType = artifactvalue.dataType as string;
-
-										element.data = artifactvalue.data as string;
-
-										if (artifactvalue.dataType === 'file') {
-
-											const item = items[i];
-
-											if (item.binary === undefined) {
-												throw new Error('No binary data exists on item!');
+												element.data = `${binaryData.fileName};${binaryData.mimeType};${binaryData.data}`;
 											}
 
-											const binaryPropertyName = artifactvalue.binaryProperty as string;
-
-											if (item.binary[binaryPropertyName] === undefined) {
-												throw new Error(`No binary data property '${binaryPropertyName}' does not exists on item!`);
-											}
-
-											const binaryData = item.binary[binaryPropertyName] as IBinaryData;
-
-											element.data = `${binaryData.fileName};${binaryData.mimeType};${binaryData.data}`;
+											artifactData.push(element);
 										}
 
-										artifactData.push(element);
+										(body.data as IDataObject).artifacts = artifactData;
 									}
-
-									(body.data as IDataObject).artifacts = artifactData;
 								}
 							}
-						}
-						if (entityType === 'case_artifact') {
-							// deal with file observable
+							if (entityType === 'case_artifact') {
+								// deal with file observable
 
-							if ((body.data as IDataObject).dataType === 'file') {
+								if ((body.data as IDataObject).dataType === 'file') {
+									const binaryPropertyName = (body.data as IDataObject)
+										.binaryPropertyName as string;
+									const binaryData = this.helpers.assertBinaryData(i, binaryPropertyName);
+									const fileBufferData = await this.helpers.getBinaryDataBuffer(
+										i,
+										binaryPropertyName,
+									);
+									const sha256 = createHash('sha256').update(fileBufferData).digest('hex');
 
-								const item = items[i];
+									(body.data as IDataObject).attachment = {
+										name: binaryData.fileName,
+										hashes: [
+											sha256,
+											createHash('sha1').update(fileBufferData).digest('hex'),
+											createHash('md5').update(fileBufferData).digest('hex'),
+										],
+										size: fileBufferData.byteLength,
+										contentType: binaryData.mimeType,
+										id: sha256,
+									};
 
-								if (item.binary === undefined) {
-									throw new Error('No binary data exists on item!');
+									delete (body.data as IDataObject).binaryPropertyName;
 								}
-
-								const binaryPropertyName = (body.data as IDataObject).binaryPropertyName as string;
-								if (item.binary[binaryPropertyName] === undefined) {
-									throw new Error(`No binary data property "${binaryPropertyName}" does not exists on item!`);
-								}
-
-								const fileBufferData = Buffer.from(item.binary[binaryPropertyName].data, BINARY_ENCODING);
-								const sha256 = createHash('sha256').update(fileBufferData).digest('hex');
-
-								(body.data as IDataObject).attachment = {
-									name: item.binary[binaryPropertyName].fileName,
-									hashes: [
-										sha256,
-										createHash('sha1').update(fileBufferData).digest('hex'),
-										createHash('md5').update(fileBufferData).digest('hex'),
-									],
-									size: fileBufferData.byteLength,
-									contentType: item.binary[binaryPropertyName].mimeType,
-									id: sha256,
-								};
-
-								delete (body.data as IDataObject).binaryPropertyName;
 							}
+							// add the job label after getting all entity attributes
+							body = {
+								label: getEntityLabel(body.data as IDataObject),
+								...body,
+							};
 						}
-						// add the job label after getting all entity attributes
-						body = {
-							label: getEntityLabel(body.data as IDataObject),
-							...body,
-						};
-
+						responseData = (await cortexApiRequest.call(
+							this,
+							'POST',
+							`/responder/${responderId}/run`,
+							body,
+						)) as IJob;
 					}
-					responseData = await cortexApiRequest.call(
-						this,
-						'POST',
-						`/responder/${responderId}/run`,
-						body,
-					) as IJob;
 				}
-			}
 
-			if (Array.isArray(responseData)) {
-				returnData.push.apply(returnData, responseData as IDataObject[]);
-			} else if (responseData !== undefined) {
-				returnData.push(responseData as IDataObject);
+				if (Array.isArray(responseData)) {
+					returnData.push.apply(returnData, responseData as IDataObject[]);
+				} else if (responseData !== undefined) {
+					returnData.push(responseData as IDataObject);
+				}
+			} catch (error) {
+				if (this.continueOnFail()) {
+					returnData.push({ error: error.message });
+					continue;
+				}
+				throw error;
 			}
 		}
 		return [this.helpers.returnJsonArray(returnData)];

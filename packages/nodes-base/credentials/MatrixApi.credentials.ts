@@ -1,24 +1,24 @@
-import {
-	ICredentialType,
-	NodePropertyTypes,
-} from 'n8n-workflow';
-
+import type { ICredentialType, INodeProperties } from 'n8n-workflow';
 
 export class MatrixApi implements ICredentialType {
 	name = 'matrixApi';
+
 	displayName = 'Matrix API';
+
 	documentationUrl = 'matrix';
-	properties = [
+
+	properties: INodeProperties[] = [
 		{
 			displayName: 'Access Token',
 			name: 'accessToken',
-			type: 'string' as NodePropertyTypes,
+			type: 'string',
+			typeOptions: { password: true },
 			default: '',
 		},
 		{
 			displayName: 'Homeserver URL',
 			name: 'homeserverUrl',
-			type: 'string' as NodePropertyTypes,
+			type: 'string',
 			default: 'https://matrix-client.matrix.org',
 		},
 	];

@@ -1,17 +1,18 @@
-import {
-	ICredentialType,
-	NodePropertyTypes,
-} from 'n8n-workflow';
+import type { ICredentialType, INodeProperties } from 'n8n-workflow';
 
 export class MondayComApi implements ICredentialType {
 	name = 'mondayComApi';
+
 	displayName = 'Monday.com API';
+
 	documentationUrl = 'mondayCom';
-	properties = [
+
+	properties: INodeProperties[] = [
 		{
 			displayName: 'Token V2',
 			name: 'apiToken',
-			type: 'string' as NodePropertyTypes,
+			type: 'string',
+			typeOptions: { password: true },
 			default: '',
 		},
 	];

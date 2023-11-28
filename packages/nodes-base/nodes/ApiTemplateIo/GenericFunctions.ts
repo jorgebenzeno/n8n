@@ -1,11 +1,7 @@
-import {
-	OptionsWithUri,
-} from 'request';
+import type { OptionsWithUri } from 'request';
 
-import {
-	IExecuteFunctions,
-	ILoadOptionsFunctions,
-} from 'n8n-core';
+import type { IExecuteFunctions, ILoadOptionsFunctions, JsonObject } from 'n8n-workflow';
+import { NodeApiError } from 'n8n-workflow';
 
 export async function apiTemplateIoApiRequest(
 	this: IExecuteFunctions | ILoadOptionsFunctions,
@@ -14,13 +10,10 @@ export async function apiTemplateIoApiRequest(
 	qs = {},
 	body = {},
 ) {
-	const { apiKey } = this.getCredentials('apiTemplateIoApi') as { apiKey: string };
-
 	const options: OptionsWithUri = {
 		headers: {
 			'user-agent': 'n8n',
 			Accept: 'application/json',
-			'X-API-KEY': `${apiKey}`,
 		},
 		uri: `https://api.apitemplate.io/v1${endpoint}`,
 		method,
@@ -40,34 +33,34 @@ export async function apiTemplateIoApiRequest(
 	}
 
 	try {
-		const response = await this.helpers.request!(options);
+		const response = await this.helpers.requestWithAuthentication.call(
+			this,
+			'apiTemplateIoApi',
+			options,
+		);
 		if (response.status === 'error') {
-			throw new Error(response.message);
+			throw new NodeApiError(this.getNode(), response.message as JsonObject);
 		}
 		return response;
 	} catch (error) {
-		if (error?.response?.body?.message) {
-			throw new Error(`APITemplate.io error response [${error.statusCode}]: ${error.response.body.message}`);
-		}
-		throw error;
+		throw new NodeApiError(this.getNode(), error as JsonObject);
 	}
 }
 
-export async function loadResource(
-	this: ILoadOptionsFunctions,
-	resource: 'image' | 'pdf',
-) {
+export async function loadResource(this: ILoadOptionsFunctions, resource: 'image' | 'pdf') {
 	const target = resource === 'image' ? ['JPEG', 'PNG'] : ['PDF'];
 	const templates = await apiTemplateIoApiRequest.call(this, 'GET', '/list-templates');
-	const filtered = templates.filter(({ format }: { format: 'PDF' | 'JPEG' | 'PNG' }) => target.includes(format));
+	const filtered = templates.filter(({ format }: { format: 'PDF' | 'JPEG' | 'PNG' }) =>
+		target.includes(format),
+	);
 
-	return filtered.map(({ format, name, id }: { format: string, name: string, id: string }) => ({
+	return filtered.map(({ format, name, id }: { format: string; name: string; id: string }) => ({
 		name: `${name} (${format})`,
 		value: id,
 	}));
 }
 
-export function validateJSON(json: string | object | undefined): any { // tslint:disable-line:no-any
+export function validateJSON(json: string | object | undefined): any {
 	let result;
 	if (typeof json === 'object') {
 		return json;
@@ -80,8 +73,7 @@ export function validateJSON(json: string | object | undefined): any { // tslint
 	return result;
 }
 
-
-export function downloadImage(this: IExecuteFunctions, url: string) {
+export async function downloadImage(this: IExecuteFunctions, url: string) {
 	return this.helpers.request({
 		uri: url,
 		method: 'GET',

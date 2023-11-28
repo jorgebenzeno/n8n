@@ -1,46 +1,36 @@
-import {
-	OptionsWithUri,
-} from 'request';
+import type { OptionsWithUri } from 'request';
 
-import {
+import type {
+	IDataObject,
 	IExecuteFunctions,
-	IExecuteSingleFunctions,
 	IHookFunctions,
 	ILoadOptionsFunctions,
-} from 'n8n-core';
-
-import {
-	IDataObject,
 } from 'n8n-workflow';
 
-import * as jwt from 'jsonwebtoken';
+export async function ghostApiRequest(
+	this: IHookFunctions | IExecuteFunctions | ILoadOptionsFunctions,
+	method: string,
+	endpoint: string,
 
-export async function ghostApiRequest(this: IHookFunctions | IExecuteFunctions | IExecuteSingleFunctions | ILoadOptionsFunctions, method: string, endpoint: string, body: any = {}, query: IDataObject = {}, uri?: string): Promise<any> { // tslint:disable-line:no-any
-
+	body: any = {},
+	query: IDataObject = {},
+	uri?: string,
+): Promise<any> {
 	const source = this.getNodeParameter('source', 0) as string;
 
-	let credentials;
 	let version;
-	let token;
+	let credentialType;
 
 	if (source === 'contentApi') {
 		//https://ghost.org/faq/api-versioning/
 		version = 'v3';
-		credentials = this.getCredentials('ghostContentApi') as IDataObject;
-		query.key = credentials.apiKey as string;
+		credentialType = 'ghostContentApi';
 	} else {
 		version = 'v2';
-		credentials = this.getCredentials('ghostAdminApi') as IDataObject;
-		// Create the token (including decoding secret)
-		const [id, secret] = (credentials.apiKey as string).split(':');
-
-		token = jwt.sign({}, Buffer.from(secret, 'hex'), {
-			keyid: id,
-			algorithm: 'HS256',
-			expiresIn: '5m',
-			audience: `/${version}/admin/`,
-		});
+		credentialType = 'ghostAdminApi';
 	}
+
+	const credentials = await this.getCredentials(credentialType);
 
 	const options: OptionsWithUri = {
 		method,
@@ -50,55 +40,34 @@ export async function ghostApiRequest(this: IHookFunctions | IExecuteFunctions |
 		json: true,
 	};
 
-	if (token) {
-		options.headers = {
-			Authorization: `Ghost ${token}`,
-		};
-	}
-
-	try {
-		return await this.helpers.request!(options);
-
-	} catch (error) {
-		let errorMessages;
-
-		if (error.response && error.response.body && error.response.body.errors) {
-
-			if (Array.isArray(error.response.body.errors)) {
-
-				const errors = error.response.body.errors;
-
-				errorMessages = errors.map((e: IDataObject) => e.message);
-			}
-
-			throw new Error(`Ghost error response [${error.statusCode}]: ${errorMessages?.join('|')}`);
-		}
-
-		throw error;
-	}
+	return this.helpers.requestWithAuthentication.call(this, credentialType, options);
 }
 
-export async function ghostApiRequestAllItems(this: IHookFunctions | IExecuteFunctions | ILoadOptionsFunctions, propertyName: string, method: string, endpoint: string, body: any = {}, query: IDataObject = {}): Promise<any> { // tslint:disable-line:no-any
+export async function ghostApiRequestAllItems(
+	this: IHookFunctions | IExecuteFunctions | ILoadOptionsFunctions,
+	propertyName: string,
+	method: string,
+	endpoint: string,
 
+	body: any = {},
+	query: IDataObject = {},
+): Promise<any> {
 	const returnData: IDataObject[] = [];
 
 	let responseData;
 
-	query.limit = 20;
-
-	let uri: string | undefined;
+	query.limit = 50;
+	query.page = 1;
 
 	do {
-		responseData = await ghostApiRequest.call(this, method, endpoint, body, query, uri);
-		uri = responseData.meta.pagination.next;
-		returnData.push.apply(returnData, responseData[propertyName]);
-	} while (
-		responseData.meta.pagination.next !== null
-	);
+		responseData = await ghostApiRequest.call(this, method, endpoint, body, query);
+		query.page = responseData.meta.pagination.next;
+		returnData.push.apply(returnData, responseData[propertyName] as IDataObject[]);
+	} while (query.page !== null);
 	return returnData;
 }
 
-export function validateJSON(json: string | undefined): any { // tslint:disable-line:no-any
+export function validateJSON(json: string | undefined): any {
 	let result;
 	try {
 		result = JSON.parse(json!);

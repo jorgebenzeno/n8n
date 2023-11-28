@@ -1,30 +1,25 @@
-import {
+import type {
 	IHookFunctions,
 	IWebhookFunctions,
-} from 'n8n-core';
-
-import {
 	IDataObject,
 	INodeType,
 	INodeTypeDescription,
 	IWebhookResponseData,
 } from 'n8n-workflow';
 
-import {
-	flowApiRequest,
-} from './GenericFunctions';
+import { flowApiRequest } from './GenericFunctions';
 
 export class FlowTrigger implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Flow Trigger',
 		name: 'flowTrigger',
+		// eslint-disable-next-line n8n-nodes-base/node-class-description-icon-not-svg
 		icon: 'file:flow.png',
 		group: ['trigger'],
 		version: 1,
 		description: 'Handle Flow events via webhooks',
 		defaults: {
 			name: 'Flow Trigger',
-			color: '#559922',
 		},
 		inputs: [],
 		outputs: ['main'],
@@ -47,18 +42,18 @@ export class FlowTrigger implements INodeType {
 				displayName: 'Resource',
 				name: 'resource',
 				type: 'options',
+				noDataExpression: true,
 				default: '',
-				options:
-					[
-						{
-							name: 'Project',
-							value: 'list',
-						},
-						{
-							name: 'Task',
-							value: 'task',
-						},
-					],
+				options: [
+					{
+						name: 'Project',
+						value: 'list',
+					},
+					{
+						name: 'Task',
+						value: 'task',
+					},
+				],
 				description: 'Resource that triggers the webhook',
 			},
 			{
@@ -69,17 +64,13 @@ export class FlowTrigger implements INodeType {
 				default: '',
 				displayOptions: {
 					show: {
-						resource:[
-							'list',
-						],
+						resource: ['list'],
 					},
 					hide: {
-						resource: [
-							'task',
-						],
+						resource: ['task'],
 					},
 				},
-				description: `Lists ids, perhaps known better as "Projects" separated by ,`,
+				description: 'Lists IDs, perhaps known better as "Projects" separated by a comma (,)',
 			},
 			{
 				displayName: 'Task ID',
@@ -89,30 +80,21 @@ export class FlowTrigger implements INodeType {
 				default: '',
 				displayOptions: {
 					show: {
-						resource:[
-							'task',
-						],
+						resource: ['task'],
 					},
 					hide: {
-						resource: [
-							'list',
-						],
+						resource: ['list'],
 					},
 				},
-				description: `Task ids separated by ,`,
+				description: 'Task IDs separated by a comma (,)',
 			},
 		],
-
 	};
-	// @ts-ignore
+
 	webhookMethods = {
 		default: {
 			async checkExists(this: IHookFunctions): Promise<boolean> {
-				const credentials = this.getCredentials('flowApi');
-
-				if (credentials === undefined) {
-					throw new Error('No credentials got returned!');
-				}
+				const credentials = await this.getCredentials('flowApi');
 
 				let webhooks;
 				const qs: IDataObject = {};
@@ -124,12 +106,12 @@ export class FlowTrigger implements INodeType {
 					return false;
 				}
 				qs.organization_id = credentials.organizationId as number;
-				const endpoint = `/integration_webhooks`;
+				const endpoint = '/integration_webhooks';
 				try {
 					webhooks = await flowApiRequest.call(this, 'GET', endpoint, {}, qs);
 					webhooks = webhooks.integration_webhooks;
-				} catch (e) {
-					throw e;
+				} catch (error) {
+					throw error;
 				}
 				for (const webhook of webhooks) {
 					// @ts-ignore
@@ -142,17 +124,13 @@ export class FlowTrigger implements INodeType {
 				return true;
 			},
 			async create(this: IHookFunctions): Promise<boolean> {
-				const credentials = this.getCredentials('flowApi');
-
-				if (credentials === undefined) {
-					throw new Error('No credentials got returned!');
-				}
+				const credentials = await this.getCredentials('flowApi');
 
 				let resourceIds, body, responseData;
 				const webhookUrl = this.getNodeWebhookUrl('default');
 				const webhookData = this.getWorkflowStaticData('node');
 				const resource = this.getNodeParameter('resource') as string;
-				const endpoint = `/integration_webhooks`;
+				const endpoint = '/integration_webhooks';
 				if (resource === 'list') {
 					resourceIds = (this.getNodeParameter('listIds') as string).split(',');
 				}
@@ -160,7 +138,7 @@ export class FlowTrigger implements INodeType {
 					resourceIds = (this.getNodeParameter('taskIds') as string).split(',');
 				}
 				// @ts-ignore
-				for (const resourceId of resourceIds ) {
+				for (const resourceId of resourceIds) {
 					body = {
 						organization_id: credentials.organizationId as number,
 						integration_webhook: {
@@ -171,12 +149,14 @@ export class FlowTrigger implements INodeType {
 						},
 					};
 					try {
-						 responseData = await flowApiRequest.call(this, 'POST', endpoint, body);
-					} catch(error) {
+						responseData = await flowApiRequest.call(this, 'POST', endpoint, body);
+					} catch (error) {
 						return false;
 					}
-					if (responseData.integration_webhook === undefined
-						|| responseData.integration_webhook.id === undefined) {
+					if (
+						responseData.integration_webhook === undefined ||
+						responseData.integration_webhook.id === undefined
+					) {
 						// Required data is missing so was not successful
 						return false;
 					}
@@ -186,11 +166,7 @@ export class FlowTrigger implements INodeType {
 				return true;
 			},
 			async delete(this: IHookFunctions): Promise<boolean> {
-				const credentials = this.getCredentials('flowApi');
-
-				if (credentials === undefined) {
-					throw new Error('No credentials got returned!');
-				}
+				const credentials = await this.getCredentials('flowApi');
 
 				const qs: IDataObject = {};
 				const webhookData = this.getWorkflowStaticData('node');
@@ -198,11 +174,11 @@ export class FlowTrigger implements INodeType {
 				// @ts-ignore
 				if (webhookData.webhookIds.length > 0) {
 					// @ts-ignore
-					for (const webhookId of webhookData.webhookIds ) {
+					for (const webhookId of webhookData.webhookIds) {
 						const endpoint = `/integration_webhooks/${webhookId}`;
 						try {
 							await flowApiRequest.call(this, 'DELETE', endpoint, {}, qs);
-						} catch (e) {
+						} catch (error) {
 							return false;
 						}
 					}
@@ -216,9 +192,7 @@ export class FlowTrigger implements INodeType {
 	async webhook(this: IWebhookFunctions): Promise<IWebhookResponseData> {
 		const req = this.getRequestObject();
 		return {
-			workflowData: [
-				this.helpers.returnJsonArray(req.body),
-			],
+			workflowData: [this.helpers.returnJsonArray(req.body as IDataObject[])],
 		};
 	}
 }

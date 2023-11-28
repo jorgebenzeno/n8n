@@ -1,62 +1,72 @@
+/* eslint-disable @typescript-eslint/restrict-template-expressions */
+import { Container } from 'typedi';
+import type { DataSourceOptions as ConnectionOptions, EntityManager, LoggerOptions } from 'typeorm';
+import { DataSource as Connection } from 'typeorm';
+import type { TlsOptions } from 'tls';
+import { ErrorReporterProxy as ErrorReporter } from 'n8n-workflow';
+
+import config from '@/config';
+
+import { entities } from '@db/entities';
 import {
-	DatabaseType,
-	GenericHelpers,
-	IDatabaseCollections,
-} from './';
+	getMariaDBConnectionOptions,
+	getMysqlConnectionOptions,
+	getOptionOverrides,
+	getPostgresConnectionOptions,
+	getSqliteConnectionOptions,
+} from '@db/config';
+import { inTest } from '@/constants';
+import { wrapMigration } from '@db/utils/migrationHelpers';
+import type { DatabaseType, Migration } from '@db/types';
 
-import {
-	UserSettings,
-} from 'n8n-core';
+let connection: Connection;
 
-import {
-	ConnectionOptions,
-	createConnection,
-	getRepository,
-} from 'typeorm';
+export const getConnection = () => connection!;
 
-import { TlsOptions } from 'tls';
-
-import * as config from '../config';
-
-import {
-	MySQLDb,
-	PostgresDb,
-	SQLite,
-} from './databases';
-
-export let collections: IDatabaseCollections = {
-	Credentials: null,
-	Execution: null,
-	Workflow: null,
-	Webhook: null,
+type ConnectionState = {
+	connected: boolean;
+	migrated: boolean;
 };
 
-import { postgresMigrations } from './databases/postgresdb/migrations';
-import { mysqlMigrations } from './databases/mysqldb/migrations';
-import { sqliteMigrations } from './databases/sqlite/migrations';
+export const connectionState: ConnectionState = {
+	connected: false,
+	migrated: false,
+};
 
-import * as path from 'path';
+// Ping DB connection every 2 seconds
+let pingTimer: NodeJS.Timer | undefined;
+if (!inTest) {
+	const pingDBFn = async () => {
+		if (connection?.isInitialized) {
+			try {
+				await connection.query('SELECT 1');
+				connectionState.connected = true;
+				return;
+			} catch (error) {
+				ErrorReporter.error(error);
+			} finally {
+				pingTimer = setTimeout(pingDBFn, 2000);
+			}
+		}
+		connectionState.connected = false;
+	};
+	pingTimer = setTimeout(pingDBFn, 2000);
+}
 
-export async function init(): Promise<IDatabaseCollections> {
-	const dbType = await GenericHelpers.getConfigValue('database.type') as DatabaseType;
-	const n8nFolder = UserSettings.getUserN8nFolderPath();
+export async function transaction<T>(fn: (entityManager: EntityManager) => Promise<T>): Promise<T> {
+	return connection.transaction(fn);
+}
 
-	let entities;
-	let connectionOptions: ConnectionOptions;
-
-	const entityPrefix = config.get('database.tablePrefix');
-
+export function getConnectionOptions(dbType: DatabaseType): ConnectionOptions {
 	switch (dbType) {
 		case 'postgresdb':
-			entities = PostgresDb;
+			const sslCa = config.getEnv('database.postgresdb.ssl.ca');
+			const sslCert = config.getEnv('database.postgresdb.ssl.cert');
+			const sslKey = config.getEnv('database.postgresdb.ssl.key');
+			const sslRejectUnauthorized = config.getEnv('database.postgresdb.ssl.rejectUnauthorized');
 
-			const sslCa = await GenericHelpers.getConfigValue('database.postgresdb.ssl.ca') as string;
-			const sslCert = await GenericHelpers.getConfigValue('database.postgresdb.ssl.cert') as string;
-			const sslKey = await GenericHelpers.getConfigValue('database.postgresdb.ssl.key') as string;
-			const sslRejectUnauthorized = await GenericHelpers.getConfigValue('database.postgresdb.ssl.rejectUnauthorized') as boolean;
-
-			let ssl: TlsOptions | undefined = undefined;
-			if (sslCa !== '' || sslCert !== '' || sslKey !== '' || sslRejectUnauthorized !== true) {
+			let ssl: TlsOptions | boolean = config.getEnv('database.postgresdb.ssl.enabled');
+			if (sslCa !== '' || sslCert !== '' || sslKey !== '' || !sslRejectUnauthorized) {
 				ssl = {
 					ca: sslCa || undefined,
 					cert: sslCert || undefined,
@@ -65,91 +75,84 @@ export async function init(): Promise<IDatabaseCollections> {
 				};
 			}
 
-			connectionOptions = {
-				type: 'postgres',
-				entityPrefix,
-				database: await GenericHelpers.getConfigValue('database.postgresdb.database') as string,
-				host: await GenericHelpers.getConfigValue('database.postgresdb.host') as string,
-				password: await GenericHelpers.getConfigValue('database.postgresdb.password') as string,
-				port: await GenericHelpers.getConfigValue('database.postgresdb.port') as number,
-				username: await GenericHelpers.getConfigValue('database.postgresdb.user') as string,
-				schema: config.get('database.postgresdb.schema'),
-				migrations: postgresMigrations,
-				migrationsRun: true,
-				migrationsTableName: `${entityPrefix}migrations`,
+			return {
+				...getPostgresConnectionOptions(),
+				...getOptionOverrides('postgresdb'),
 				ssl,
 			};
 
-			break;
-
 		case 'mariadb':
 		case 'mysqldb':
-			entities = MySQLDb;
-			connectionOptions = {
-				type: dbType === 'mysqldb' ? 'mysql' : 'mariadb',
-				database: await GenericHelpers.getConfigValue('database.mysqldb.database') as string,
-				entityPrefix,
-				host: await GenericHelpers.getConfigValue('database.mysqldb.host') as string,
-				password: await GenericHelpers.getConfigValue('database.mysqldb.password') as string,
-				port: await GenericHelpers.getConfigValue('database.mysqldb.port') as number,
-				username: await GenericHelpers.getConfigValue('database.mysqldb.user') as string,
-				migrations: mysqlMigrations,
-				migrationsRun: true,
-				migrationsTableName: `${entityPrefix}migrations`,
+			return {
+				...(dbType === 'mysqldb' ? getMysqlConnectionOptions() : getMariaDBConnectionOptions()),
+				...getOptionOverrides('mysqldb'),
+				timezone: 'Z', // set UTC as default
 			};
-			break;
 
 		case 'sqlite':
-			entities = SQLite;
-			connectionOptions = {
-				type: 'sqlite',
-				database:  path.join(n8nFolder, 'database.sqlite'),
-				entityPrefix,
-				migrations: sqliteMigrations,
-				migrationsRun: false, // migrations for sqlite will be ran manually for now; see below
-				migrationsTableName: `${entityPrefix}migrations`,
-			};
-			break;
+			return getSqliteConnectionOptions();
 
 		default:
 			throw new Error(`The database "${dbType}" is currently not supported!`);
 	}
+}
+
+export async function init(testConnectionOptions?: ConnectionOptions): Promise<void> {
+	if (connectionState.connected) return;
+
+	const dbType = config.getEnv('database.type');
+	const connectionOptions = testConnectionOptions ?? getConnectionOptions(dbType);
+
+	let loggingOption: LoggerOptions = config.getEnv('database.logging.enabled');
+
+	if (loggingOption) {
+		const optionsString = config.getEnv('database.logging.options').replace(/\s+/g, '');
+
+		if (optionsString === 'all') {
+			loggingOption = optionsString;
+		} else {
+			loggingOption = optionsString.split(',') as LoggerOptions;
+		}
+	}
+
+	const maxQueryExecutionTime = config.getEnv('database.logging.maxQueryExecutionTime');
 
 	Object.assign(connectionOptions, {
 		entities: Object.values(entities),
 		synchronize: false,
-		logging: false,
+		logging: loggingOption,
+		maxQueryExecutionTime,
+		migrationsRun: false,
 	});
 
-	let connection = await createConnection(connectionOptions);
+	connection = new Connection(connectionOptions);
+	Container.set(Connection, connection);
+	await connection.initialize();
 
-	if (dbType === 'sqlite') {
-		// This specific migration changes database metadata.
-		// A field is now nullable. We need to reconnect so that
-		// n8n knows it has changed. Happens only on sqlite.
-		let migrations = [];
-		try {
-			migrations = await connection.query(`SELECT id FROM ${entityPrefix}migrations where name = "MakeStoppedAtNullable1607431743769"`);
-		} catch(error) {
-			// Migration table does not exist yet - it will be created after migrations run for the first time.
+	if (dbType === 'postgresdb') {
+		const schema = config.getEnv('database.postgresdb.schema');
+		const searchPath = ['public'];
+		if (schema !== 'public') {
+			await connection.query(`CREATE SCHEMA IF NOT EXISTS ${schema}`);
+			searchPath.unshift(schema);
 		}
-
-		// If you remove this call, remember to turn back on the
-		// setting to run migrations automatically above.
-		await connection.runMigrations({
-			transaction: 'none',
-		});
-
-		if (migrations.length === 0) {
-			await connection.close();
-			connection = await createConnection(connectionOptions);
-		}
+		await connection.query(`SET search_path TO ${searchPath.join(',')};`);
 	}
 
-	collections.Credentials = getRepository(entities.CredentialsEntity);
-	collections.Execution = getRepository(entities.ExecutionEntity);
-	collections.Workflow = getRepository(entities.WorkflowEntity);
-	collections.Webhook = getRepository(entities.WebhookEntity);
-
-	return collections;
+	connectionState.connected = true;
 }
+
+export async function migrate() {
+	(connection.options.migrations as Migration[]).forEach(wrapMigration);
+	await connection.runMigrations({ transaction: 'each' });
+	connectionState.migrated = true;
+}
+
+export const close = async () => {
+	if (pingTimer) {
+		clearTimeout(pingTimer);
+		pingTimer = undefined;
+	}
+
+	if (connection.isInitialized) await connection.destroy();
+};

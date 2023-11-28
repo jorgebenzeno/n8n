@@ -1,21 +1,24 @@
-import {
-	OptionsWithUri,
-} from 'request';
+import type { OptionsWithUri } from 'request';
 
-import {
+import type {
+	IDataObject,
 	IExecuteFunctions,
 	IHookFunctions,
 	ILoadOptionsFunctions,
 	IWebhookFunctions,
-} from 'n8n-core';
-
-import {
-	IDataObject,
+	JsonObject,
 } from 'n8n-workflow';
+import { NodeApiError } from 'n8n-workflow';
 
-export async function spontitApiRequest(this: IExecuteFunctions | ILoadOptionsFunctions | IHookFunctions | IWebhookFunctions, method: string, resource: string, body: any = {}, qs: IDataObject = {}): Promise<any> { // tslint:disable-line:no-any
+export async function spontitApiRequest(
+	this: IExecuteFunctions | ILoadOptionsFunctions | IHookFunctions | IWebhookFunctions,
+	method: string,
+	resource: string,
 
-	const credentials = this.getCredentials('spontitApi') as IDataObject;
+	body: any = {},
+	qs: IDataObject = {},
+) {
+	const credentials = await this.getCredentials('spontitApi');
 
 	try {
 		const options: OptionsWithUri = {
@@ -29,21 +32,12 @@ export async function spontitApiRequest(this: IExecuteFunctions | ILoadOptionsFu
 			uri: `https://api.spontit.com/v3${resource}`,
 			json: true,
 		};
-		if (Object.keys(body).length === 0) {
+		if (Object.keys(body as IDataObject).length === 0) {
 			delete options.body;
 		}
-		//@ts-ignore
+
 		return await this.helpers?.request(options);
 	} catch (error) {
-
-		if (error.response && error.response.body && error.response.body.message) {
-
-			const messages = error.response.body.message;
-			// Try to return the error prettier
-			throw new Error(
-				`Spontit error response [${error.statusCode}]: ${messages}`,
-			);
-		}
-		throw error;
+		throw new NodeApiError(this.getNode(), error as JsonObject);
 	}
 }

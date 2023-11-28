@@ -1,8 +1,5 @@
-import {
+import type {
 	IExecuteFunctions,
-} from 'n8n-core';
-
-import {
 	IDataObject,
 	ILoadOptionsFunctions,
 	INodeExecutionData,
@@ -11,30 +8,23 @@ import {
 	INodeTypeDescription,
 } from 'n8n-workflow';
 
-import {
-	getresponseApiRequest,
-	getResponseApiRequestAllItems,
-} from './GenericFunctions';
+import moment from 'moment-timezone';
+import { getresponseApiRequest, getResponseApiRequestAllItems } from './GenericFunctions';
 
-import {
-	contactFields,
-	contactOperations,
-} from './ContactDescription';
-
-import * as moment from 'moment-timezone';
+import { contactFields, contactOperations } from './ContactDescription';
 
 export class GetResponse implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'GetResponse',
 		name: 'getResponse',
+		// eslint-disable-next-line n8n-nodes-base/node-class-description-icon-not-svg
 		icon: 'file:getResponse.png',
 		group: ['input'],
 		version: 1,
 		subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',
-		description: 'Consume GetResponse API.',
+		description: 'Consume GetResponse API',
 		defaults: {
 			name: 'GetResponse',
-			color: '#00afec',
 		},
 		inputs: ['main'],
 		outputs: ['main'],
@@ -44,9 +34,7 @@ export class GetResponse implements INodeType {
 				required: true,
 				displayOptions: {
 					show: {
-						authentication: [
-							'apiKey',
-						],
+						authentication: ['apiKey'],
 					},
 				},
 			},
@@ -55,9 +43,7 @@ export class GetResponse implements INodeType {
 				required: true,
 				displayOptions: {
 					show: {
-						authentication: [
-							'oAuth2',
-						],
+						authentication: ['oAuth2'],
 					},
 				},
 			},
@@ -78,12 +64,12 @@ export class GetResponse implements INodeType {
 					},
 				],
 				default: 'apiKey',
-				description: 'The resource to operate on.',
 			},
 			{
 				displayName: 'Resource',
 				name: 'resource',
 				type: 'options',
+				noDataExpression: true,
 				options: [
 					{
 						name: 'Contact',
@@ -91,7 +77,6 @@ export class GetResponse implements INodeType {
 					},
 				],
 				default: 'contact',
-				description: 'The resource to operate on.',
 			},
 			...contactOperations,
 			...contactFields,
@@ -100,17 +85,11 @@ export class GetResponse implements INodeType {
 
 	methods = {
 		loadOptions: {
-			// Get all the campaigns to display them to user so that he can
+			// Get all the campaigns to display them to user so that they can
 			// select them easily
-			async getCampaigns(
-				this: ILoadOptionsFunctions,
-			): Promise<INodePropertyOptions[]> {
+			async getCampaigns(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
 				const returnData: INodePropertyOptions[] = [];
-				const campaigns = await getresponseApiRequest.call(
-					this,
-					'GET',
-					`/campaigns`,
-				);
+				const campaigns = await getresponseApiRequest.call(this, 'GET', '/campaigns');
 				for (const campaign of campaigns) {
 					returnData.push({
 						name: campaign.name as string,
@@ -119,17 +98,11 @@ export class GetResponse implements INodeType {
 				}
 				return returnData;
 			},
-			// Get all the tagd to display them to user so that he can
+			// Get all the tagd to display them to user so that they can
 			// select them easily
-			async getTags(
-				this: ILoadOptionsFunctions,
-			): Promise<INodePropertyOptions[]> {
+			async getTags(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
 				const returnData: INodePropertyOptions[] = [];
-				const tags = await getresponseApiRequest.call(
-					this,
-					'GET',
-					`/tags`,
-				);
+				const tags = await getresponseApiRequest.call(this, 'GET', '/tags');
 				for (const tag of tags) {
 					returnData.push({
 						name: tag.name as string,
@@ -138,17 +111,11 @@ export class GetResponse implements INodeType {
 				}
 				return returnData;
 			},
-			// Get all the custom fields to display them to user so that he can
+			// Get all the custom fields to display them to user so that they can
 			// select them easily
-			async getCustomFields(
-				this: ILoadOptionsFunctions,
-			): Promise<INodePropertyOptions[]> {
+			async getCustomFields(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
 				const returnData: INodePropertyOptions[] = [];
-				const customFields = await getresponseApiRequest.call(
-					this,
-					'GET',
-					`/custom-fields`,
-				);
+				const customFields = await getresponseApiRequest.call(this, 'GET', '/custom-fields');
 				for (const customField of customFields) {
 					returnData.push({
 						name: customField.name as string,
@@ -162,159 +129,184 @@ export class GetResponse implements INodeType {
 
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
 		const items = this.getInputData();
-		const returnData: IDataObject[] = [];
-		const length = (items.length as unknown) as number;
+		const returnData: INodeExecutionData[] = [];
+		const length = items.length;
 		const qs: IDataObject = {};
 		let responseData;
-		const resource = this.getNodeParameter('resource', 0) as string;
-		const operation = this.getNodeParameter('operation', 0) as string;
+		const resource = this.getNodeParameter('resource', 0);
+		const operation = this.getNodeParameter('operation', 0);
 		for (let i = 0; i < length; i++) {
+			try {
+				if (resource === 'contact') {
+					//https://apireference.getresponse.com/#operation/createContact
+					if (operation === 'create') {
+						const email = this.getNodeParameter('email', i) as string;
 
-			if (resource === 'contact') {
-				//https://apireference.getresponse.com/#operation/createContact
-				if (operation === 'create') {
-					const email = this.getNodeParameter('email', i) as string;
+						const campaignId = this.getNodeParameter('campaignId', i) as string;
 
-					const campaignId = this.getNodeParameter('campaignId', i) as string;
+						const additionalFields = this.getNodeParameter('additionalFields', i);
 
-					const additionalFields = this.getNodeParameter('additionalFields', i) as IDataObject;
+						const body: IDataObject = {
+							email,
+							campaign: {
+								campaignId,
+							},
+						};
 
-					const body: IDataObject = {
-						email,
-						campaign: {
-							campaignId,
-						},
-					};
+						Object.assign(body, additionalFields);
 
-					Object.assign(body, additionalFields);
-
-					if (additionalFields.customFieldsUi) {
-						const customFieldValues = (additionalFields.customFieldsUi as IDataObject).customFieldValues as IDataObject[];
-						if (customFieldValues) {
-							body.customFieldValues = customFieldValues;
-							for (let i = 0; i < customFieldValues.length; i++) {
-								if (!Array.isArray(customFieldValues[i].value)) {
-									customFieldValues[i].value = [customFieldValues[i].value];
+						if (additionalFields.customFieldsUi) {
+							const customFieldValues = (additionalFields.customFieldsUi as IDataObject)
+								.customFieldValues as IDataObject[];
+							if (customFieldValues) {
+								body.customFieldValues = customFieldValues;
+								for (let index = 0; index < customFieldValues.length; index++) {
+									if (!Array.isArray(customFieldValues[index].value)) {
+										customFieldValues[index].value = [customFieldValues[index].value];
+									}
 								}
+								delete body.customFieldsUi;
 							}
-							delete body.customFieldsUi;
 						}
+
+						responseData = await getresponseApiRequest.call(this, 'POST', '/contacts', body);
+
+						responseData = { success: true };
 					}
+					//https://apireference.getresponse.com/?_ga=2.160836350.2102802044.1604719933-1897033509.1604598019#operation/deleteContact
+					if (operation === 'delete') {
+						const contactId = this.getNodeParameter('contactId', i) as string;
 
-					responseData = await getresponseApiRequest.call(this, 'POST', '/contacts', body);
+						const options = this.getNodeParameter('options', i);
 
-					responseData = { success: true };
-				}
-				//https://apireference.getresponse.com/?_ga=2.160836350.2102802044.1604719933-1897033509.1604598019#operation/deleteContact
-				if (operation === 'delete') {
-					const contactId = this.getNodeParameter('contactId', i) as string;
+						Object.assign(qs, options);
 
-					const options = this.getNodeParameter('options', i) as IDataObject;
+						responseData = await getresponseApiRequest.call(
+							this,
+							'DELETE',
+							`/contacts/${contactId}`,
+							{},
+							qs,
+						);
 
-					Object.assign(qs, options);
+						responseData = { success: true };
+					}
+					//https://apireference.getresponse.com/?_ga=2.160836350.2102802044.1604719933-1897033509.1604598019#operation/getContactById
+					if (operation === 'get') {
+						const contactId = this.getNodeParameter('contactId', i) as string;
 
-					responseData = await getresponseApiRequest.call(this, 'DELETE', `/contacts/${contactId}`, {}, qs);
+						const options = this.getNodeParameter('options', i);
 
-					responseData = { success: true };
-				}
-				//https://apireference.getresponse.com/?_ga=2.160836350.2102802044.1604719933-1897033509.1604598019#operation/getContactById
-				if (operation === 'get') {
-					const contactId = this.getNodeParameter('contactId', i) as string;
+						Object.assign(qs, options);
 
-					const options = this.getNodeParameter('options', i) as IDataObject;
+						responseData = await getresponseApiRequest.call(
+							this,
+							'GET',
+							`/contacts/${contactId}`,
+							{},
+							qs,
+						);
+					}
+					//https://apireference.getresponse.com/?_ga=2.160836350.2102802044.1604719933-1897033509.1604598019#operation/getContactList
+					if (operation === 'getAll') {
+						const returnAll = this.getNodeParameter('returnAll', i);
 
-					Object.assign(qs, options);
+						const options = this.getNodeParameter('options', i);
 
-					responseData = await getresponseApiRequest.call(this, 'GET', `/contacts/${contactId}`, {}, qs);
-				}
-				//https://apireference.getresponse.com/?_ga=2.160836350.2102802044.1604719933-1897033509.1604598019#operation/getContactList
-				if (operation === 'getAll') {
-					const returnAll = this.getNodeParameter('returnAll', i) as boolean;
+						const timezone = this.getTimezone();
 
-					const options = this.getNodeParameter('options', i) as IDataObject;
+						Object.assign(qs, options);
 
-					const timezone = this.getTimezone();
+						const isNotQuery = ['sortBy', 'sortOrder', 'additionalFlags', 'fields', 'exactMatch'];
 
-					Object.assign(qs, options);
+						const isDate = ['createdOnFrom', 'createdOnTo', 'changeOnFrom', 'changeOnTo'];
 
-					const isNotQuery = [
-						'sortBy',
-						'sortOrder',
-						'additionalFlags',
-						'fields',
-						'exactMatch',
-					];
+						const dateMapToKey: { [key: string]: string } = {
+							createdOnFrom: '[createdOn][from]',
+							createdOnTo: '[createdOn][to]',
+							changeOnFrom: '[changeOn][from]',
+							changeOnTo: '[changeOn][to]',
+						};
 
-					const isDate = [
-						'createdOnFrom',
-						'createdOnTo',
-						'changeOnFrom',
-						'changeOnTo',
-					];
-
-					const dateMapToKey: { [key: string]: string; } = {
-						'createdOnFrom': '[createdOn][from]',
-						'createdOnTo': '[createdOn][to]',
-						'changeOnFrom': '[changeOn][from]',
-						'changeOnTo': '[changeOn][to]',
-					};
-
-					for (const key of Object.keys(qs)) {
-						if (!isNotQuery.includes(key)) {
-							if (isDate.includes(key)) {
-								qs[`query${dateMapToKey[key]}`] = moment.tz(qs[key], timezone).format('YYYY-MM-DDTHH:mm:ssZZ');
-							} else {
-								qs[`query[${key}]`] = qs[key];
+						for (const key of Object.keys(qs)) {
+							if (!isNotQuery.includes(key)) {
+								if (isDate.includes(key)) {
+									qs[`query${dateMapToKey[key]}`] = moment
+										.tz(qs[key], timezone)
+										.format('YYYY-MM-DDTHH:mm:ssZZ');
+								} else {
+									qs[`query[${key}]`] = qs[key];
+								}
+								delete qs[key];
 							}
-							delete qs[key];
+						}
+
+						if (qs.sortBy) {
+							qs[`sort[${qs.sortBy}]`] = qs.sortOrder || 'ASC';
+						}
+
+						if (qs.exactMatch === true) {
+							qs.additionalFlags = 'exactMatch';
+							delete qs.exactMatch;
+						}
+
+						if (returnAll) {
+							responseData = await getResponseApiRequestAllItems.call(
+								this,
+								'GET',
+								'/contacts',
+								{},
+								qs,
+							);
+						} else {
+							qs.perPage = this.getNodeParameter('limit', i);
+							responseData = await getresponseApiRequest.call(this, 'GET', '/contacts', {}, qs);
 						}
 					}
+					//https://apireference.getresponse.com/?_ga=2.160836350.2102802044.1604719933-1897033509.1604598019#operation/updateContact
+					if (operation === 'update') {
+						const contactId = this.getNodeParameter('contactId', i) as string;
 
-					if (qs.sortBy) {
-						qs[`sort[${qs.sortBy}]`] = qs.sortOrder || 'ASC';
-					}
+						const updateFields = this.getNodeParameter('updateFields', i);
 
-					if (qs.exactMatch === true) {
-						qs['additionalFlags'] = 'exactMatch';
-						delete qs.exactMatch;
-					}
+						const body: IDataObject = {};
 
-					if (returnAll) {
-						responseData = await getResponseApiRequestAllItems.call(this, 'GET', `/contacts`, {}, qs);
-					} else {
-						qs.perPage = this.getNodeParameter('limit', i) as number;
-						responseData = await getresponseApiRequest.call(this, 'GET', `/contacts`, {}, qs);
-					}
-				}
-				//https://apireference.getresponse.com/?_ga=2.160836350.2102802044.1604719933-1897033509.1604598019#operation/updateContact
-				if (operation === 'update') {
+						Object.assign(body, updateFields);
 
-					const contactId = this.getNodeParameter('contactId', i) as string;
-
-					const updateFields = this.getNodeParameter('updateFields', i) as IDataObject;
-
-					const body: IDataObject = {};
-
-					Object.assign(body, updateFields);
-
-					if (updateFields.customFieldsUi) {
-						const customFieldValues = (updateFields.customFieldsUi as IDataObject).customFieldValues as IDataObject[];
-						if (customFieldValues) {
-							body.customFieldValues = customFieldValues;
-							delete body.customFieldsUi;
+						if (updateFields.customFieldsUi) {
+							const customFieldValues = (updateFields.customFieldsUi as IDataObject)
+								.customFieldValues as IDataObject[];
+							if (customFieldValues) {
+								body.customFieldValues = customFieldValues;
+								delete body.customFieldsUi;
+							}
 						}
+
+						responseData = await getresponseApiRequest.call(
+							this,
+							'POST',
+							`/contacts/${contactId}`,
+							body,
+						);
 					}
-
-					responseData = await getresponseApiRequest.call(this, 'POST', `/contacts/${contactId}`, body);
 				}
-			}
-			if (Array.isArray(responseData)) {
-				returnData.push.apply(returnData, responseData as IDataObject[]);
-
-			} else if (responseData !== undefined) {
-				returnData.push(responseData as IDataObject);
+				const executionData = this.helpers.constructExecutionMetaData(
+					this.helpers.returnJsonArray(responseData as IDataObject),
+					{ itemData: { item: i } },
+				);
+				returnData.push(...executionData);
+			} catch (error) {
+				if (this.continueOnFail()) {
+					const executionErrorData = this.helpers.constructExecutionMetaData(
+						this.helpers.returnJsonArray({ error: error.message }),
+						{ itemData: { item: i } },
+					);
+					returnData.push(...executionErrorData);
+					continue;
+				}
+				throw error;
 			}
 		}
-		return [this.helpers.returnJsonArray(returnData)];
+		return [returnData];
 	}
 }

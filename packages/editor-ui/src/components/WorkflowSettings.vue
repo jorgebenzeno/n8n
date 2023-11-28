@@ -1,205 +1,424 @@
 <template>
-	<span>
-		<el-dialog class="workflow-settings" :visible="dialogVisible" append-to-body width="65%" title="Workflow Settings" :before-close="closeDialog">
-			<div v-loading="isLoading">
+	<Modal
+		:name="WORKFLOW_SETTINGS_MODAL_KEY"
+		width="65%"
+		maxHeight="80%"
+		:title="
+			$locale.baseText('workflowSettings.settingsFor', {
+				interpolate: { workflowName, workflowId },
+			})
+		"
+		:eventBus="modalBus"
+		:scrollable="true"
+	>
+		<template #content>
+			<div v-loading="isLoading" class="workflow-settings" data-test-id="workflow-settings-dialog">
 				<el-row>
 					<el-col :span="10" class="setting-name">
-						Error Workflow:
-						<el-tooltip class="setting-info" placement="top" effect="light">
-							<div slot="content" v-html="helpTexts.errorWorkflow"></div>
-							<font-awesome-icon icon="question-circle" />
-						</el-tooltip>
+						{{ $locale.baseText('workflowSettings.executionOrder') + ':' }}
 					</el-col>
 					<el-col :span="14" class="ignore-key-press">
-						<el-select v-model="workflowSettings.errorWorkflow" placeholder="Select Workflow" size="small" filterable>
-							<el-option
+						<n8n-select
+							v-model="workflowSettings.executionOrder"
+							placeholder="Select Execution Order"
+							size="medium"
+							filterable
+							:disabled="readOnlyEnv"
+							:limit-popper-width="true"
+							data-test-id="workflow-settings-execution-order"
+						>
+							<n8n-option
+								v-for="option in executionOrderOptions"
+								:key="option.key"
+								:label="option.value"
+								:value="option.key"
+							>
+							</n8n-option>
+						</n8n-select>
+					</el-col>
+				</el-row>
+
+				<el-row>
+					<el-col :span="10" class="setting-name">
+						{{ $locale.baseText('workflowSettings.errorWorkflow') + ':' }}
+						<n8n-tooltip placement="top">
+							<template #content>
+								<div v-html="helpTexts.errorWorkflow"></div>
+							</template>
+							<font-awesome-icon icon="question-circle" />
+						</n8n-tooltip>
+					</el-col>
+					<el-col :span="14" class="ignore-key-press">
+						<n8n-select
+							v-model="workflowSettings.errorWorkflow"
+							placeholder="Select Workflow"
+							filterable
+							:disabled="readOnlyEnv"
+							:limit-popper-width="true"
+							data-test-id="workflow-settings-error-workflow"
+						>
+							<n8n-option
 								v-for="item in workflows"
 								:key="item.id"
 								:label="item.name"
-								:value="item.id">
-							</el-option>
-						</el-select>
+								:value="item.id"
+							>
+							</n8n-option>
+						</n8n-select>
 					</el-col>
 				</el-row>
-				<el-row>
-					<el-col :span="10" class="setting-name">
-						Timezone:
-						<el-tooltip class="setting-info" placement="top" effect="light">
-							<div slot="content" v-html="helpTexts.timezone"></div>
-							<font-awesome-icon icon="question-circle" />
-						</el-tooltip>
-					</el-col>
-					<el-col :span="14" class="ignore-key-press">
-						<el-select v-model="workflowSettings.timezone" placeholder="Select Timezone" size="small" filterable>
-							<el-option
-								v-for="timezone of timezones"
-								:key="timezone.key"
-								:label="timezone.value"
-								:value="timezone.key">
-							</el-option>
-						</el-select>
-					</el-col>
-				</el-row>
-				<el-row>
-					<el-col :span="10" class="setting-name">
-						Save Data Error Execution:
-						<el-tooltip class="setting-info" placement="top" effect="light">
-							<div slot="content" v-html="helpTexts.saveDataErrorExecution"></div>
-							<font-awesome-icon icon="question-circle" />
-						</el-tooltip>
-					</el-col>
-					<el-col :span="14" class="ignore-key-press">
-						<el-select v-model="workflowSettings.saveDataErrorExecution" placeholder="Select Option" size="small" filterable>
-							<el-option
-								v-for="option of saveDataErrorExecutionOptions"
-								:key="option.key"
-								:label="option.value"
-								:value="option.key">
-							</el-option>
-						</el-select>
-					</el-col>
-				</el-row>
-				<el-row>
-					<el-col :span="10" class="setting-name">
-						Save Data Success Execution:
-						<el-tooltip class="setting-info" placement="top" effect="light">
-							<div slot="content" v-html="helpTexts.saveDataSuccessExecution"></div>
-							<font-awesome-icon icon="question-circle" />
-						</el-tooltip>
-					</el-col>
-					<el-col :span="14" class="ignore-key-press">
-						<el-select v-model="workflowSettings.saveDataSuccessExecution" placeholder="Select Option" size="small" filterable>
-							<el-option
-								v-for="option of saveDataSuccessExecutionOptions"
-								:key="option.key"
-								:label="option.value"
-								:value="option.key">
-							</el-option>
-						</el-select>
-					</el-col>
-				</el-row>
-				<el-row>
-					<el-col :span="10" class="setting-name">
-						Save Manual Executions:
-						<el-tooltip class="setting-info" placement="top" effect="light">
-							<div slot="content" v-html="helpTexts.saveManualExecutions"></div>
-							<font-awesome-icon icon="question-circle" />
-						</el-tooltip>
-					</el-col>
-					<el-col :span="14" class="ignore-key-press">
-						<el-select v-model="workflowSettings.saveManualExecutions" placeholder="Select Option" size="small" filterable>
-							<el-option
-								v-for="option of saveManualOptions"
-								:key="option.key"
-								:label="option.value"
-								:value="option.key">
-							</el-option>
-						</el-select>
-					</el-col>
-				</el-row>
-				<el-row>
-					<el-col :span="10" class="setting-name">
-						Save Execution Progress:
-						<el-tooltip class="setting-info" placement="top" effect="light">
-							<div slot="content" v-html="helpTexts.saveExecutionProgress"></div>
-							<font-awesome-icon icon="question-circle" />
-						</el-tooltip>
-					</el-col>
-					<el-col :span="14" class="ignore-key-press">
-						<el-select v-model="workflowSettings.saveExecutionProgress" placeholder="Select Option" size="small" filterable>
-							<el-option
-								v-for="option of saveExecutionProgressOptions"
-								:key="option.key"
-								:label="option.value"
-								:value="option.key">
-							</el-option>
-						</el-select>
-					</el-col>
-				</el-row>
-				<el-row>
-					<el-col :span="10" class="setting-name">
-						Timeout Workflow:
-						<el-tooltip class="setting-info" placement="top" effect="light">
-							<div slot="content" v-html="helpTexts.executionTimeoutToggle"></div>
-							<font-awesome-icon icon="question-circle" />
-						</el-tooltip>
-					</el-col>
-					<el-col :span="14">
-						<div>
-							<el-switch ref="inputField" :value="workflowSettings.executionTimeout > -1" @change="toggleTimeout" active-color="#13ce66"></el-switch>
-							<div class="expression-info clickable" @click="expressionEditDialogVisible = true">Edit Expression</div>
-						</div>
-					</el-col>
-				</el-row>
-				<div v-if="workflowSettings.executionTimeout > -1">
+				<div v-if="isSharingEnabled" data-test-id="workflow-caller-policy">
 					<el-row>
 						<el-col :span="10" class="setting-name">
-							Timeout After:
-							<el-tooltip class="setting-info" placement="top" effect="light">
-								<div slot="content" v-html="helpTexts.executionTimeout"></div>
+							{{ $locale.baseText('workflowSettings.callerPolicy') + ':' }}
+							<n8n-tooltip placement="top">
+								<template #content>
+									<div v-text="helpTexts.workflowCallerPolicy"></div>
+								</template>
 								<font-awesome-icon icon="question-circle" />
-							</el-tooltip>
+							</n8n-tooltip>
 						</el-col>
-						<el-col :span="4">
-							<el-input-number size="small" v-model="timeoutHMS.hours" :min="0" placeholder="hours" type="number" class="el-input_inner"></el-input-number><br />
-							<div class="timeout-setting-name">hours</div>
+
+						<el-col :span="14" class="ignore-key-press">
+							<n8n-select
+								v-model="workflowSettings.callerPolicy"
+								:disabled="readOnlyEnv"
+								:placeholder="$locale.baseText('workflowSettings.selectOption')"
+								filterable
+								:limit-popper-width="true"
+							>
+								<n8n-option
+									v-for="option of workflowCallerPolicyOptions"
+									:key="option.key"
+									:label="option.value"
+									:value="option.key"
+								>
+								</n8n-option>
+							</n8n-select>
 						</el-col>
-						<el-col :span="4">
-							<el-input-number size="small" v-model="timeoutHMS.minutes" :min="0" placeholder="minutes" type="number" class="el-input_inner"></el-input-number><br />
-							<div class="timeout-setting-name">minutes</div>
+					</el-row>
+					<el-row v-if="workflowSettings.callerPolicy === 'workflowsFromAList'">
+						<el-col :span="10" class="setting-name">
+							{{ $locale.baseText('workflowSettings.callerIds') + ':' }}
+							<n8n-tooltip placement="top">
+								<template #content>
+									<div v-text="helpTexts.workflowCallerIds"></div>
+								</template>
+								<font-awesome-icon icon="question-circle" />
+							</n8n-tooltip>
 						</el-col>
-						<el-col :span="4">
-							<el-input-number size="small" v-model="timeoutHMS.seconds" :min="0" placeholder="seconds" type="number" class="el-input_inner"></el-input-number><br />
-							<div class="timeout-setting-name">seconds</div>
+						<el-col :span="14">
+							<n8n-input
+								:disabled="readOnlyEnv"
+								:placeholder="$locale.baseText('workflowSettings.callerIds.placeholder')"
+								type="text"
+								v-model="workflowSettings.callerIds"
+								@update:modelValue="onCallerIdsInput"
+								data-test-id="workflow-caller-policy-workflow-ids"
+							/>
 						</el-col>
 					</el-row>
 				</div>
-				<div class="action-buttons">
-					<el-button type="success" @click="saveSettings">
-						Save
-					</el-button>
+				<el-row>
+					<el-col :span="10" class="setting-name">
+						{{ $locale.baseText('workflowSettings.timezone') + ':' }}
+						<n8n-tooltip placement="top">
+							<template #content>
+								<div v-text="helpTexts.timezone"></div>
+							</template>
+							<font-awesome-icon icon="question-circle" />
+						</n8n-tooltip>
+					</el-col>
+					<el-col :span="14" class="ignore-key-press">
+						<n8n-select
+							v-model="workflowSettings.timezone"
+							placeholder="Select Timezone"
+							filterable
+							:disabled="readOnlyEnv"
+							:limit-popper-width="true"
+							data-test-id="workflow-settings-timezone"
+						>
+							<n8n-option
+								v-for="timezone of timezones"
+								:key="timezone.key"
+								:label="timezone.value"
+								:value="timezone.key"
+							>
+							</n8n-option>
+						</n8n-select>
+					</el-col>
+				</el-row>
+				<el-row>
+					<el-col :span="10" class="setting-name">
+						{{ $locale.baseText('workflowSettings.saveDataErrorExecution') + ':' }}
+						<n8n-tooltip placement="top">
+							<template #content>
+								<div v-text="helpTexts.saveDataErrorExecution"></div>
+							</template>
+							<font-awesome-icon icon="question-circle" />
+						</n8n-tooltip>
+					</el-col>
+					<el-col :span="14" class="ignore-key-press">
+						<n8n-select
+							v-model="workflowSettings.saveDataErrorExecution"
+							:placeholder="$locale.baseText('workflowSettings.selectOption')"
+							filterable
+							:disabled="readOnlyEnv"
+							:limit-popper-width="true"
+							data-test-id="workflow-settings-save-failed-executions"
+						>
+							<n8n-option
+								v-for="option of saveDataErrorExecutionOptions"
+								:key="option.key"
+								:label="option.value"
+								:value="option.key"
+							>
+							</n8n-option>
+						</n8n-select>
+					</el-col>
+				</el-row>
+				<el-row>
+					<el-col :span="10" class="setting-name">
+						{{ $locale.baseText('workflowSettings.saveDataSuccessExecution') + ':' }}
+						<n8n-tooltip placement="top">
+							<template #content>
+								<div v-text="helpTexts.saveDataSuccessExecution"></div>
+							</template>
+							<font-awesome-icon icon="question-circle" />
+						</n8n-tooltip>
+					</el-col>
+					<el-col :span="14" class="ignore-key-press">
+						<n8n-select
+							v-model="workflowSettings.saveDataSuccessExecution"
+							:placeholder="$locale.baseText('workflowSettings.selectOption')"
+							filterable
+							:disabled="readOnlyEnv"
+							:limit-popper-width="true"
+							data-test-id="workflow-settings-save-success-executions"
+						>
+							<n8n-option
+								v-for="option of saveDataSuccessExecutionOptions"
+								:key="option.key"
+								:label="option.value"
+								:value="option.key"
+							>
+							</n8n-option>
+						</n8n-select>
+					</el-col>
+				</el-row>
+				<el-row>
+					<el-col :span="10" class="setting-name">
+						{{ $locale.baseText('workflowSettings.saveManualExecutions') + ':' }}
+						<n8n-tooltip placement="top">
+							<template #content>
+								<div v-text="helpTexts.saveManualExecutions"></div>
+							</template>
+							<font-awesome-icon icon="question-circle" />
+						</n8n-tooltip>
+					</el-col>
+					<el-col :span="14" class="ignore-key-press">
+						<n8n-select
+							v-model="workflowSettings.saveManualExecutions"
+							:placeholder="$locale.baseText('workflowSettings.selectOption')"
+							filterable
+							:disabled="readOnlyEnv"
+							:limit-popper-width="true"
+							data-test-id="workflow-settings-save-manual-executions"
+						>
+							<n8n-option
+								v-for="option of saveManualOptions"
+								:key="option.key"
+								:label="option.value"
+								:value="option.key"
+							>
+							</n8n-option>
+						</n8n-select>
+					</el-col>
+				</el-row>
+				<el-row>
+					<el-col :span="10" class="setting-name">
+						{{ $locale.baseText('workflowSettings.saveExecutionProgress') + ':' }}
+						<n8n-tooltip placement="top">
+							<template #content>
+								<div v-text="helpTexts.saveExecutionProgress"></div>
+							</template>
+							<font-awesome-icon icon="question-circle" />
+						</n8n-tooltip>
+					</el-col>
+					<el-col :span="14" class="ignore-key-press">
+						<n8n-select
+							v-model="workflowSettings.saveExecutionProgress"
+							:placeholder="$locale.baseText('workflowSettings.selectOption')"
+							filterable
+							:disabled="readOnlyEnv"
+							:limit-popper-width="true"
+							data-test-id="workflow-settings-save-execution-progress"
+						>
+							<n8n-option
+								v-for="option of saveExecutionProgressOptions"
+								:key="option.key"
+								:label="option.value"
+								:value="option.key"
+							>
+							</n8n-option>
+						</n8n-select>
+					</el-col>
+				</el-row>
+				<el-row>
+					<el-col :span="10" class="setting-name">
+						{{ $locale.baseText('workflowSettings.timeoutWorkflow') + ':' }}
+						<n8n-tooltip placement="top">
+							<template #content>
+								<div v-text="helpTexts.executionTimeoutToggle"></div>
+							</template>
+							<font-awesome-icon icon="question-circle" />
+						</n8n-tooltip>
+					</el-col>
+					<el-col :span="14">
+						<div>
+							<el-switch
+								ref="inputField"
+								:disabled="readOnlyEnv"
+								:modelValue="workflowSettings.executionTimeout > -1"
+								@update:modelValue="toggleTimeout"
+								active-color="#13ce66"
+								data-test-id="workflow-settings-timeout-workflow"
+							></el-switch>
+						</div>
+					</el-col>
+				</el-row>
+				<div
+					v-if="workflowSettings.executionTimeout > -1"
+					data-test-id="workflow-settings-timeout-form"
+				>
+					<el-row>
+						<el-col :span="10" class="setting-name">
+							{{ $locale.baseText('workflowSettings.timeoutAfter') + ':' }}
+							<n8n-tooltip placement="top">
+								<template #content>
+									<div v-text="helpTexts.executionTimeout"></div>
+								</template>
+								<font-awesome-icon icon="question-circle" />
+							</n8n-tooltip>
+						</el-col>
+						<el-col :span="4">
+							<n8n-input
+								:disabled="readOnlyEnv"
+								:modelValue="timeoutHMS.hours"
+								@update:modelValue="(value) => setTimeout('hours', value)"
+								:min="0"
+							>
+								<template #append>{{ $locale.baseText('workflowSettings.hours') }}</template>
+							</n8n-input>
+						</el-col>
+						<el-col :span="4" class="timeout-input">
+							<n8n-input
+								:disabled="readOnlyEnv"
+								:modelValue="timeoutHMS.minutes"
+								:min="0"
+								:max="60"
+								@update:modelValue="(value) => setTimeout('minutes', value)"
+							>
+								<template #append>{{ $locale.baseText('workflowSettings.minutes') }}</template>
+							</n8n-input>
+						</el-col>
+						<el-col :span="4" class="timeout-input">
+							<n8n-input
+								:disabled="readOnlyEnv"
+								:modelValue="timeoutHMS.seconds"
+								:min="0"
+								:max="60"
+								@update:modelValue="(value) => setTimeout('seconds', value)"
+							>
+								<template #append>{{ $locale.baseText('workflowSettings.seconds') }}</template>
+							</n8n-input>
+						</el-col>
+					</el-row>
 				</div>
 			</div>
-		</el-dialog>
-	</span>
+		</template>
+		<template #footer>
+			<div class="action-buttons" data-test-id="workflow-settings-save-button">
+				<n8n-button
+					:disabled="readOnlyEnv"
+					:label="$locale.baseText('workflowSettings.save')"
+					size="large"
+					float="right"
+					@click="saveSettings"
+				/>
+			</div>
+		</template>
+	</Modal>
 </template>
 
 <script lang="ts">
-import Vue from 'vue';
+import { defineComponent } from 'vue';
+import { mapStores } from 'pinia';
 
-import { restApi } from '@/components/mixins/restApi';
-import { genericHelpers } from '@/components/mixins/genericHelpers';
-import { showMessage } from '@/components/mixins/showMessage';
-import {
+import { externalHooks } from '@/mixins/externalHooks';
+import { genericHelpers } from '@/mixins/genericHelpers';
+import { useToast } from '@/composables/useToast';
+import type {
 	ITimeoutHMS,
+	IUser,
 	IWorkflowDataUpdate,
+	IWorkflowDb,
 	IWorkflowSettings,
 	IWorkflowShortResponse,
 } from '@/Interface';
+import Modal from '@/components/Modal.vue';
+import {
+	EnterpriseEditionFeature,
+	PLACEHOLDER_EMPTY_WORKFLOW_ID,
+	WORKFLOW_SETTINGS_MODAL_KEY,
+} from '@/constants';
 
-import mixins from 'vue-typed-mixins';
+import type { WorkflowSettings } from 'n8n-workflow';
+import { deepCopy } from 'n8n-workflow';
+import { useSettingsStore } from '@/stores/settings.store';
+import { useUsersStore } from '@/stores/users.store';
+import { useRootStore } from '@/stores/n8nRoot.store';
+import { useWorkflowsEEStore } from '@/stores/workflows.ee.store';
+import { useWorkflowsStore } from '@/stores/workflows.store';
+import { createEventBus } from 'n8n-design-system/utils';
 
-export default mixins(
-	genericHelpers,
-	restApi,
-	showMessage,
-).extend({
+export default defineComponent({
 	name: 'WorkflowSettings',
-	props: [
-		'dialogVisible',
-	],
-	data () {
+	mixins: [externalHooks, genericHelpers],
+	components: {
+		Modal,
+	},
+	setup() {
+		return {
+			...useToast(),
+		};
+	},
+	data() {
 		return {
 			isLoading: true,
 			helpTexts: {
-				errorWorkflow: 'The workflow to run in case the current one fails.<br />To function correctly that workflow has to contain an "Error Trigger" node!',
-				timezone: 'The timezone in which the workflow should run. Gets for example used by "Cron" node.',
-				saveDataErrorExecution: 'If data data of executions should be saved in case they failed.',
-				saveDataSuccessExecution: 'If data data of executions should be saved in case they succeed.',
-				saveExecutionProgress: 'If data should be saved after each node, allowing you to resume in case of errors from where it stopped. May increase latency.',
-				saveManualExecutions: 'If data data of executions should be saved when started manually from the editor.',
-				executionTimeoutToggle: 'Cancel workflow execution after defined time',
-				executionTimeout: 'After what time the workflow should timeout.',
+				errorWorkflow: this.$locale.baseText('workflowSettings.helpTexts.errorWorkflow'),
+				timezone: this.$locale.baseText('workflowSettings.helpTexts.timezone'),
+				saveDataErrorExecution: this.$locale.baseText(
+					'workflowSettings.helpTexts.saveDataErrorExecution',
+				),
+				saveDataSuccessExecution: this.$locale.baseText(
+					'workflowSettings.helpTexts.saveDataSuccessExecution',
+				),
+				saveExecutionProgress: this.$locale.baseText(
+					'workflowSettings.helpTexts.saveExecutionProgress',
+				),
+				saveManualExecutions: this.$locale.baseText(
+					'workflowSettings.helpTexts.saveManualExecutions',
+				),
+				executionTimeoutToggle: this.$locale.baseText(
+					'workflowSettings.helpTexts.executionTimeoutToggle',
+				),
+				executionTimeout: this.$locale.baseText('workflowSettings.helpTexts.executionTimeout'),
+				workflowCallerPolicy: this.$locale.baseText(
+					'workflowSettings.helpTexts.workflowCallerPolicy',
+				),
+				workflowCallerIds: this.$locale.baseText('workflowSettings.helpTexts.workflowCallerIds'),
 			},
 			defaultValues: {
 				timezone: 'America/New_York',
@@ -207,122 +426,324 @@ export default mixins(
 				saveDataSuccessExecution: 'all',
 				saveExecutionProgress: false,
 				saveManualExecutions: false,
+				workflowCallerPolicy: 'workflowsFromSameOwner',
 			},
-			saveDataErrorExecutionOptions: [] as Array<{ key: string, value: string }>,
-			saveDataSuccessExecutionOptions: [] as Array<{ key: string, value: string }>,
-			saveExecutionProgressOptions: [] as Array<{ key: string | boolean, value: string }>,
-			saveManualOptions: [] as Array<{ key: string | boolean, value: string }>,
-			timezones: [] as Array<{ key: string, value: string }>,
+			workflowCallerPolicyOptions: [] as Array<{ key: string; value: string }>,
+			saveDataErrorExecutionOptions: [] as Array<{ key: string; value: string }>,
+			saveDataSuccessExecutionOptions: [] as Array<{ key: string; value: string }>,
+			saveExecutionProgressOptions: [] as Array<{ key: string | boolean; value: string }>,
+			saveManualOptions: [] as Array<{ key: string | boolean; value: string }>,
+			executionOrderOptions: [
+				{ key: 'v0', value: 'v0 (legacy)' },
+				{ key: 'v1', value: 'v1 (recommended)' },
+			] as Array<{ key: string; value: string }>,
+			timezones: [] as Array<{ key: string; value: string }>,
 			workflowSettings: {} as IWorkflowSettings,
 			workflows: [] as IWorkflowShortResponse[],
-			executionTimeout: this.$store.getters.executionTimeout,
-			maxExecutionTimeout: this.$store.getters.maxExecutionTimeout,
+			executionOrder: 'v0',
+			executionTimeout: 0,
+			maxExecutionTimeout: 0,
 			timeoutHMS: { hours: 0, minutes: 0, seconds: 0 } as ITimeoutHMS,
+			modalBus: createEventBus(),
+			WORKFLOW_SETTINGS_MODAL_KEY,
 		};
 	},
-	watch: {
-		dialogVisible (newValue, oldValue) {
-			if (newValue) {
-				this.openDialog();
-			}
+
+	computed: {
+		...mapStores(
+			useRootStore,
+			useUsersStore,
+			useSettingsStore,
+			useWorkflowsStore,
+			useWorkflowsEEStore,
+		),
+		workflowName(): string {
+			return this.workflowsStore.workflowName;
+		},
+		workflowId(): string {
+			return this.workflowsStore.workflowId;
+		},
+		workflow(): IWorkflowDb {
+			return this.workflowsStore.workflow;
+		},
+		currentUser(): IUser | null {
+			return this.usersStore.currentUser;
+		},
+		isSharingEnabled(): boolean {
+			return this.settingsStore.isEnterpriseFeatureEnabled(EnterpriseEditionFeature.Sharing);
+		},
+		workflowOwnerName(): string {
+			const fallback = this.$locale.baseText(
+				'workflowSettings.callerPolicy.options.workflowsFromSameOwner.fallback',
+			);
+
+			return this.workflowsEEStore.getWorkflowOwnerName(`${this.workflowId}`, fallback);
 		},
 	},
+	async mounted() {
+		this.executionTimeout = this.rootStore.executionTimeout;
+		this.maxExecutionTimeout = this.rootStore.maxExecutionTimeout;
+
+		if (!this.workflowId || this.workflowId === PLACEHOLDER_EMPTY_WORKFLOW_ID) {
+			this.showMessage({
+				title: 'No workflow active',
+				message: 'No workflow active to display settings of.',
+				type: 'error',
+				duration: 0,
+			});
+			this.closeDialog();
+			return;
+		}
+
+		this.defaultValues.saveDataErrorExecution = this.settingsStore.saveDataErrorExecution;
+		this.defaultValues.saveDataSuccessExecution = this.settingsStore.saveDataSuccessExecution;
+		this.defaultValues.saveManualExecutions = this.settingsStore.saveManualExecutions;
+		this.defaultValues.timezone = this.rootStore.timezone;
+		this.defaultValues.workflowCallerPolicy = this.settingsStore.workflowCallerPolicyDefaultOption;
+
+		this.isLoading = true;
+		const promises = [];
+		promises.push(this.loadWorkflows());
+		promises.push(this.loadSaveDataErrorExecutionOptions());
+		promises.push(this.loadSaveDataSuccessExecutionOptions());
+		promises.push(this.loadSaveExecutionProgressOptions());
+		promises.push(this.loadSaveManualOptions());
+		promises.push(this.loadTimezones());
+		promises.push(this.loadWorkflowCallerPolicyOptions());
+
+		try {
+			await Promise.all(promises);
+		} catch (error) {
+			this.showError(
+				error,
+				'Problem loading settings',
+				'The following error occurred loading the data:',
+			);
+		}
+
+		const workflowSettings = deepCopy(this.workflowsStore.workflowSettings) as IWorkflowSettings;
+
+		if (workflowSettings.timezone === undefined) {
+			workflowSettings.timezone = 'DEFAULT';
+		}
+		if (workflowSettings.saveDataErrorExecution === undefined) {
+			workflowSettings.saveDataErrorExecution = 'DEFAULT';
+		}
+		if (workflowSettings.saveDataSuccessExecution === undefined) {
+			workflowSettings.saveDataSuccessExecution = 'DEFAULT';
+		}
+		if (workflowSettings.saveExecutionProgress === undefined) {
+			workflowSettings.saveExecutionProgress = 'DEFAULT';
+		}
+		if (workflowSettings.saveManualExecutions === undefined) {
+			workflowSettings.saveManualExecutions = this.defaultValues.saveManualExecutions;
+		}
+		if (workflowSettings.callerPolicy === undefined) {
+			workflowSettings.callerPolicy = this.defaultValues
+				.workflowCallerPolicy as WorkflowSettings.CallerPolicy;
+		}
+		if (workflowSettings.executionTimeout === undefined) {
+			workflowSettings.executionTimeout = this.rootStore.executionTimeout;
+		}
+		if (workflowSettings.maxExecutionTimeout === undefined) {
+			workflowSettings.maxExecutionTimeout = this.rootStore.maxExecutionTimeout;
+		}
+		if (workflowSettings.executionOrder === undefined) {
+			workflowSettings.executionOrder = 'v0';
+		}
+
+		this.workflowSettings = workflowSettings;
+		this.timeoutHMS = this.convertToHMS(workflowSettings.executionTimeout);
+		this.isLoading = false;
+
+		void this.$externalHooks().run('workflowSettings.dialogVisibleChanged', {
+			dialogVisible: true,
+		});
+		this.$telemetry.track('User opened workflow settings', {
+			workflow_id: this.workflowsStore.workflowId,
+		});
+	},
 	methods: {
-		closeDialog () {
-			// Handle the close externally as the visible parameter is an external prop
-			// and is so not allowed to be changed here.
-			this.$emit('closeDialog');
-			return false;
+		onCallerIdsInput(str: string) {
+			this.workflowSettings.callerIds = /^[a-zA-Z0-9,\s]+$/.test(str)
+				? str
+				: str.replace(/[^a-zA-Z0-9,\s]/g, '');
 		},
-		async loadSaveDataErrorExecutionOptions () {
+		closeDialog() {
+			this.modalBus.emit('close');
+			void this.$externalHooks().run('workflowSettings.dialogVisibleChanged', {
+				dialogVisible: false,
+			});
+		},
+		setTimeout(key: string, value: string) {
+			const time = value ? parseInt(value, 10) : 0;
+
+			this.timeoutHMS = {
+				...this.timeoutHMS,
+				[key]: time,
+			};
+		},
+		async loadWorkflowCallerPolicyOptions() {
+			const currentUserIsOwner = this.workflow.ownedBy?.id === this.currentUser?.id;
+
+			this.workflowCallerPolicyOptions = [
+				{
+					key: 'none',
+					value: this.$locale.baseText('workflowSettings.callerPolicy.options.none'),
+				},
+				{
+					key: 'workflowsFromSameOwner',
+					value: this.$locale.baseText(
+						'workflowSettings.callerPolicy.options.workflowsFromSameOwner',
+						{
+							interpolate: {
+								owner: currentUserIsOwner
+									? this.$locale.baseText(
+											'workflowSettings.callerPolicy.options.workflowsFromSameOwner.owner',
+									  )
+									: this.workflowOwnerName,
+							},
+						},
+					),
+				},
+				{
+					key: 'workflowsFromAList',
+					value: this.$locale.baseText('workflowSettings.callerPolicy.options.workflowsFromAList'),
+				},
+				{
+					key: 'any',
+					value: this.$locale.baseText('workflowSettings.callerPolicy.options.any'),
+				},
+			];
+		},
+		async loadSaveDataErrorExecutionOptions() {
 			this.saveDataErrorExecutionOptions.length = 0;
-			this.saveDataErrorExecutionOptions.push.apply( // eslint-disable-line no-useless-call
-				this.saveDataErrorExecutionOptions, [
-					{
-						key: 'DEFAULT',
-						value: 'Default - ' + (this.defaultValues.saveDataErrorExecution === 'all' ? 'Save' : 'Do not save'),
-					},
-					{
-						key: 'all',
-						value: 'Save',
-					},
-					{
-						key: 'none',
-						value: 'Do not save',
-					},
-				],
-			);
+			this.saveDataErrorExecutionOptions.push.apply(this.saveDataErrorExecutionOptions, [
+				{
+					key: 'DEFAULT',
+					value: this.$locale.baseText(
+						'workflowSettings.saveDataErrorExecutionOptions.defaultSave',
+						{
+							interpolate: {
+								defaultValue:
+									this.defaultValues.saveDataErrorExecution === 'all'
+										? this.$locale.baseText('workflowSettings.saveDataErrorExecutionOptions.save')
+										: this.$locale.baseText(
+												'workflowSettings.saveDataErrorExecutionOptions.doNotSave',
+										  ),
+							},
+						},
+					),
+				},
+				{
+					key: 'all',
+					value: this.$locale.baseText('workflowSettings.saveDataErrorExecutionOptions.save'),
+				},
+				{
+					key: 'none',
+					value: this.$locale.baseText('workflowSettings.saveDataErrorExecutionOptions.doNotSave'),
+				},
+			]);
 		},
-		async loadSaveDataSuccessExecutionOptions () {
+		async loadSaveDataSuccessExecutionOptions() {
 			this.saveDataSuccessExecutionOptions.length = 0;
-			this.saveDataSuccessExecutionOptions.push.apply( // eslint-disable-line no-useless-call
-				this.saveDataSuccessExecutionOptions, [
-					{
-						key: 'DEFAULT',
-						value: 'Default - ' + (this.defaultValues.saveDataSuccessExecution === 'all' ? 'Save' : 'Do not save'),
-					},
-					{
-						key: 'all',
-						value: 'Save',
-					},
-					{
-						key: 'none',
-						value: 'Do not save',
-					},
-				],
-			);
+			this.saveDataSuccessExecutionOptions.push.apply(this.saveDataSuccessExecutionOptions, [
+				{
+					key: 'DEFAULT',
+					value: this.$locale.baseText(
+						'workflowSettings.saveDataSuccessExecutionOptions.defaultSave',
+						{
+							interpolate: {
+								defaultValue:
+									this.defaultValues.saveDataSuccessExecution === 'all'
+										? this.$locale.baseText('workflowSettings.saveDataSuccessExecutionOptions.save')
+										: this.$locale.baseText(
+												'workflowSettings.saveDataSuccessExecutionOptions.doNotSave',
+										  ),
+							},
+						},
+					),
+				},
+				{
+					key: 'all',
+					value: this.$locale.baseText('workflowSettings.saveDataSuccessExecutionOptions.save'),
+				},
+				{
+					key: 'none',
+					value: this.$locale.baseText(
+						'workflowSettings.saveDataSuccessExecutionOptions.doNotSave',
+					),
+				},
+			]);
 		},
-		async loadSaveExecutionProgressOptions () {
+		async loadSaveExecutionProgressOptions() {
 			this.saveExecutionProgressOptions.length = 0;
-			this.saveExecutionProgressOptions.push.apply( // eslint-disable-line no-useless-call
-				this.saveExecutionProgressOptions, [
-					{
-						key: 'DEFAULT',
-						value: 'Default - ' + (this.defaultValues.saveExecutionProgress === true ? 'Yes' : 'No'),
-					},
-					{
-						key: true,
-						value: 'Yes',
-					},
-					{
-						key: false,
-						value: 'No',
-					},
-				],
-			);
+			this.saveExecutionProgressOptions.push.apply(this.saveExecutionProgressOptions, [
+				{
+					key: 'DEFAULT',
+					value: this.$locale.baseText(
+						'workflowSettings.saveExecutionProgressOptions.defaultSave',
+						{
+							interpolate: {
+								defaultValue: this.defaultValues.saveExecutionProgress
+									? this.$locale.baseText('workflowSettings.saveExecutionProgressOptions.save')
+									: this.$locale.baseText(
+											'workflowSettings.saveExecutionProgressOptions.doNotSave',
+									  ),
+							},
+						},
+					),
+				},
+				{
+					key: true,
+					value: this.$locale.baseText('workflowSettings.saveExecutionProgressOptions.save'),
+				},
+				{
+					key: false,
+					value: this.$locale.baseText('workflowSettings.saveExecutionProgressOptions.doNotSave'),
+				},
+			]);
 		},
-		async loadSaveManualOptions () {
+		async loadSaveManualOptions() {
 			this.saveManualOptions.length = 0;
 			this.saveManualOptions.push({
 				key: 'DEFAULT',
-				value: 'Default - ' + (this.defaultValues.saveManualExecutions === true ? 'Yes' : 'No'),
+				value: this.$locale.baseText('workflowSettings.saveManualOptions.defaultSave', {
+					interpolate: {
+						defaultValue: this.defaultValues.saveManualExecutions
+							? this.$locale.baseText('workflowSettings.saveManualOptions.save')
+							: this.$locale.baseText('workflowSettings.saveManualOptions.doNotSave'),
+					},
+				}),
 			});
 			this.saveManualOptions.push({
 				key: true,
-				value: 'Yes',
+				value: this.$locale.baseText('workflowSettings.saveManualOptions.save'),
 			});
 			this.saveManualOptions.push({
 				key: false,
-				value: 'No',
+				value: this.$locale.baseText('workflowSettings.saveManualOptions.doNotSave'),
 			});
 		},
 
-		async loadTimezones () {
+		async loadTimezones() {
 			if (this.timezones.length !== 0) {
 				// Data got already loaded
 				return;
 			}
 
-			const timezones = await this.restApi().getTimezones();
+			const timezones = await this.settingsStore.getTimezones();
 
 			let defaultTimezoneValue = timezones[this.defaultValues.timezone] as string | undefined;
 			if (defaultTimezoneValue === undefined) {
-				defaultTimezoneValue = 'Default Timezone not valid!';
+				defaultTimezoneValue = this.$locale.baseText('workflowSettings.defaultTimezoneNotValid');
 			}
 
 			this.timezones.push({
 				key: 'DEFAULT',
-				value: `Default - ${defaultTimezoneValue}`,
+				value: this.$locale.baseText('workflowSettings.defaultTimezone', {
+					interpolate: { defaultTimezoneValue },
+				}),
 			});
 			for (const timezone of Object.keys(timezones)) {
 				this.timezones.push({
@@ -331,8 +752,8 @@ export default mixins(
 				});
 			}
 		},
-		async loadWorkflows () {
-			const workflows = await this.restApi().getWorkflows();
+		async loadWorkflows() {
+			const workflows = (await this.workflowsStore.fetchAllWorkflows()) as IWorkflowShortResponse[];
 			workflows.sort((a, b) => {
 				if (a.name.toLowerCase() < b.name.toLowerCase()) {
 					return -1;
@@ -343,76 +764,14 @@ export default mixins(
 				return 0;
 			});
 
-			// @ts-ignore
 			workflows.unshift({
 				id: undefined as unknown as string,
-				name: '- No Workflow -',
-			});
+				name: this.$locale.baseText('workflowSettings.noWorkflow'),
+			} as IWorkflowShortResponse);
 
-			Vue.set(this, 'workflows', workflows);
+			this.workflows = workflows;
 		},
-		async openDialog () {
-			const workflowId = this.$route.params.name;
-			if (this.$route.params.name === undefined) {
-				this.$showMessage({
-					title: 'No workflow active',
-					message: `No workflow active to display settings of.`,
-					type: 'error',
-					duration: 0,
-				});
-				this.closeDialog();
-				return;
-			}
-
-			this.defaultValues.saveDataErrorExecution = this.$store.getters.saveDataErrorExecution;
-			this.defaultValues.saveDataSuccessExecution = this.$store.getters.saveDataSuccessExecution;
-			this.defaultValues.saveManualExecutions = this.$store.getters.saveManualExecutions;
-			this.defaultValues.timezone = this.$store.getters.timezone;
-
-			this.isLoading = true;
-			const promises = [];
-			promises.push(this.loadWorkflows());
-			promises.push(this.loadSaveDataErrorExecutionOptions());
-			promises.push(this.loadSaveDataSuccessExecutionOptions());
-			promises.push(this.loadSaveExecutionProgressOptions());
-			promises.push(this.loadSaveManualOptions());
-			promises.push(this.loadTimezones());
-
-			try {
-				await Promise.all(promises);
-			} catch (error) {
-				this.$showError(error, 'Problem loading settings', 'The following error occurred loading the data:');
-			}
-
-			const workflowSettings = JSON.parse(JSON.stringify(this.$store.getters.workflowSettings));
-
-			if (workflowSettings.timezone === undefined) {
-				workflowSettings.timezone = 'DEFAULT';
-			}
-			if (workflowSettings.saveDataErrorExecution === undefined) {
-				workflowSettings.saveDataErrorExecution = 'DEFAULT';
-			}
-			if (workflowSettings.saveDataSuccessExecution === undefined) {
-				workflowSettings.saveDataSuccessExecution = 'DEFAULT';
-			}
-			if (workflowSettings.saveExecutionProgress === undefined) {
-				workflowSettings.saveExecutionProgress = 'DEFAULT';
-			}
-			if (workflowSettings.saveManualExecutions === undefined) {
-				workflowSettings.saveManualExecutions = 'DEFAULT';
-			}
-			if (workflowSettings.executionTimeout === undefined) {
-				workflowSettings.executionTimeout = this.$store.getters.executionTimeout;
-			}
-			if (workflowSettings.maxExecutionTimeout === undefined) {
-				workflowSettings.maxExecutionTimeout = this.$store.getters.maxExecutionTimeout;
-			}
-
-			Vue.set(this, 'workflowSettings', workflowSettings);
-			this.timeoutHMS = this.convertToHMS(workflowSettings.executionTimeout);
-			this.isLoading = false;
-		},
-		async saveSettings () {
+		async saveSettings() {
 			// Set that the active state should be changed
 			const data: IWorkflowDataUpdate = {
 				settings: this.workflowSettings,
@@ -421,29 +780,50 @@ export default mixins(
 			// Convert hours, minutes, seconds into seconds for the workflow timeout
 			const { hours, minutes, seconds } = this.timeoutHMS;
 			data.settings!.executionTimeout =
-				data.settings!.executionTimeout !== -1
-					? hours * 3600 + minutes * 60 + seconds
-					: -1;
+				data.settings!.executionTimeout !== -1 ? hours * 3600 + minutes * 60 + seconds : -1;
 
 			if (data.settings!.executionTimeout === 0) {
-				this.$showError(new Error('timeout is activated but set to 0'), 'Problem saving settings', 'There was a problem saving the settings:');
+				this.showError(
+					new Error(this.$locale.baseText('workflowSettings.showError.saveSettings1.errorMessage')),
+					this.$locale.baseText('workflowSettings.showError.saveSettings1.title'),
+					this.$locale.baseText('workflowSettings.showError.saveSettings1.message') + ':',
+				);
 				return;
 			}
 
 			// @ts-ignore
 			if (data.settings!.executionTimeout > this.workflowSettings.maxExecutionTimeout) {
-				const { hours, minutes, seconds } = this.convertToHMS(this.workflowSettings.maxExecutionTimeout as number);
-				this.$showError(new Error(`Maximum Timeout is: ${hours} hours, ${minutes} minutes, ${seconds} seconds`), 'Problem saving settings', 'Set timeout is exceeding the maximum timeout!');
+				const { hours, minutes, seconds } = this.convertToHMS(
+					this.workflowSettings.maxExecutionTimeout as number,
+				);
+				this.showError(
+					new Error(
+						this.$locale.baseText('workflowSettings.showError.saveSettings2.errorMessage', {
+							interpolate: {
+								hours: hours.toString(),
+								minutes: minutes.toString(),
+								seconds: seconds.toString(),
+							},
+						}),
+					),
+					this.$locale.baseText('workflowSettings.showError.saveSettings2.title'),
+					this.$locale.baseText('workflowSettings.showError.saveSettings2.message') + ':',
+				);
 				return;
 			}
 			delete data.settings!.maxExecutionTimeout;
 
 			this.isLoading = true;
+			data.versionId = this.workflowsStore.workflowVersionId;
 
 			try {
-				await this.restApi().updateWorkflow(this.$route.params.name, data);
+				const workflow = await this.workflowsStore.updateWorkflow(this.$route.params.name, data);
+				this.workflowsStore.setWorkflowVersionId(workflow.versionId);
 			} catch (error) {
-				this.$showError(error, 'Problem saving settings', 'There was a problem saving the settings:');
+				this.showError(
+					error,
+					this.$locale.baseText('workflowSettings.showError.saveSettings3.title'),
+				);
 				this.isLoading = false;
 				return;
 			}
@@ -456,26 +836,32 @@ export default mixins(
 				}
 			}
 
-			this.$store.commit('setWorkflowSettings', localWorkflowSettings);
+			const oldSettings = deepCopy(this.workflowsStore.workflowSettings);
+
+			this.workflowsStore.setWorkflowSettings(localWorkflowSettings);
 
 			this.isLoading = false;
 
-			this.$showMessage({
-				title: 'Settings saved',
-				message: 'The workflow settings got saved!',
+			this.showMessage({
+				title: this.$locale.baseText('workflowSettings.showMessage.saveSettings.title'),
 				type: 'success',
 			});
 
 			this.closeDialog();
+
+			void this.$externalHooks().run('workflowSettings.saveSettings', { oldSettings });
+			this.$telemetry.track('User updated workflow settings', {
+				workflow_id: this.workflowsStore.workflowId,
+			});
 		},
 		toggleTimeout() {
-			this.workflowSettings.executionTimeout = this.workflowSettings.executionTimeout === -1 ? 0 : -1;
+			this.workflowSettings.executionTimeout =
+				this.workflowSettings.executionTimeout === -1 ? 0 : -1;
 		},
 		convertToHMS(num: number): ITimeoutHMS {
 			if (num > 0) {
-				let remainder: number;
 				const hours = Math.floor(num / 3600);
-				remainder = num % 3600;
+				const remainder = num % 3600;
 				const minutes = Math.floor(remainder / 60);
 				const seconds = remainder % 60;
 				return { hours, minutes, seconds };
@@ -488,33 +874,29 @@ export default mixins(
 
 <style scoped lang="scss">
 .workflow-settings {
+	font-size: var(--font-size-s);
 	.el-row {
 		padding: 0.25em 0;
 	}
 }
 
-.action-buttons {
-	margin-top: 1em;
-	text-align: right;
-}
-
-.setting-info {
-	display: none;
-}
-
 .setting-name {
 	line-height: 32px;
-}
 
-.setting-name:hover {
-	.setting-info {
-		display: inline;
+	svg {
+		display: inline-flex;
+		opacity: 0;
+		transition: opacity 0.3s ease;
+	}
+
+	&:hover {
+		svg {
+			opacity: 1;
+		}
 	}
 }
 
-.timeout-setting-name {
-	text-align: center;
-	width: calc(100% - 20px);
+.timeout-input {
+	margin-left: 5px;
 }
-
 </style>

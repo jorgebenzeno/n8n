@@ -1,17 +1,18 @@
-import {
-	ICredentialType,
-	NodePropertyTypes,
-} from 'n8n-workflow';
+import type { ICredentialType, INodeProperties } from 'n8n-workflow';
 
 export class PagerDutyApi implements ICredentialType {
 	name = 'pagerDutyApi';
+
 	displayName = 'PagerDuty API';
+
 	documentationUrl = 'pagerDuty';
-	properties = [
+
+	properties: INodeProperties[] = [
 		{
 			displayName: 'API Token',
 			name: 'apiToken',
-			type: 'string' as NodePropertyTypes,
+			type: 'string',
+			typeOptions: { password: true },
 			default: '',
 		},
 	];

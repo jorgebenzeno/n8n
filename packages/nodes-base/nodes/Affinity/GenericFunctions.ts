@@ -1,26 +1,25 @@
-import {
-	OptionsWithUri,
-} from 'request';
+import type { OptionsWithUri } from 'request';
 
-import {
-	BINARY_ENCODING,
+import type {
+	IDataObject,
 	IExecuteFunctions,
 	ILoadOptionsFunctions,
-} from 'n8n-core';
-
-import {
-	IDataObject,
 	IHookFunctions,
 	IWebhookFunctions,
+	JsonObject,
 } from 'n8n-workflow';
+import { BINARY_ENCODING, NodeApiError } from 'n8n-workflow';
 
-export async function affinityApiRequest(this: IExecuteFunctions | IWebhookFunctions | IHookFunctions | ILoadOptionsFunctions, method: string, resource: string, body: any = {}, query: IDataObject = {}, uri?: string, option: IDataObject = {}): Promise<any> { // tslint:disable-line:no-any
-
-	const credentials = this.getCredentials('affinityApi');
-
-	if (credentials === undefined) {
-		throw new Error('No credentials got returned!');
-	}
+export async function affinityApiRequest(
+	this: IExecuteFunctions | IWebhookFunctions | IHookFunctions | ILoadOptionsFunctions,
+	method: string,
+	resource: string,
+	body: any = {},
+	query: IDataObject = {},
+	uri?: string,
+	option: IDataObject = {},
+): Promise<any> {
+	const credentials = await this.getCredentials('affinityApi');
 
 	const apiKey = `:${credentials.apiKey}`;
 
@@ -37,7 +36,7 @@ export async function affinityApiRequest(this: IExecuteFunctions | IWebhookFunct
 		uri: uri || `${endpoint}${resource}`,
 		json: true,
 	};
-	if (!Object.keys(body).length) {
+	if (!Object.keys(body as IDataObject).length) {
 		delete options.body;
 	}
 	if (!Object.keys(query).length) {
@@ -45,18 +44,20 @@ export async function affinityApiRequest(this: IExecuteFunctions | IWebhookFunct
 	}
 	options = Object.assign({}, options, option);
 	try {
-		return await this.helpers.request!(options);
+		return await this.helpers.request(options);
 	} catch (error) {
-		if (error.response) {
-			const errorMessage = error.response.body.message || error.response.body.description || error.message;
-			throw new Error(`Affinity error response [${error.statusCode}]: ${errorMessage}`);
-		}
-		throw error;
+		throw new NodeApiError(this.getNode(), error as JsonObject);
 	}
 }
 
-export async function affinityApiRequestAllItems(this: IHookFunctions | ILoadOptionsFunctions | IExecuteFunctions, propertyName: string, method: string, resource: string, body: any = {}, query: IDataObject = {}): Promise<any> { // tslint:disable-line:no-any
-
+export async function affinityApiRequestAllItems(
+	this: IHookFunctions | ILoadOptionsFunctions | IExecuteFunctions,
+	propertyName: string,
+	method: string,
+	resource: string,
+	body: any = {},
+	query: IDataObject = {},
+): Promise<any> {
 	const returnData: IDataObject[] = [];
 
 	let responseData;
@@ -67,11 +68,8 @@ export async function affinityApiRequestAllItems(this: IHookFunctions | ILoadOpt
 		responseData = await affinityApiRequest.call(this, method, resource, body, query);
 		// @ts-ignore
 		query.page_token = responseData.page_token;
-		returnData.push.apply(returnData, responseData[propertyName]);
-	} while (
-		responseData.page_token !== undefined &&
-		responseData.page_token !== null
-	);
+		returnData.push.apply(returnData, responseData[propertyName] as IDataObject[]);
+	} while (responseData.page_token !== undefined && responseData.page_token !== null);
 
 	return returnData;
 }

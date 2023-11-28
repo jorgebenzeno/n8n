@@ -1,30 +1,23 @@
-import {
-	OptionsWithUri,
-} from 'request';
+import { createHash } from 'crypto';
+import type { OptionsWithUri } from 'request';
 
-import {
+import type {
+	ICredentialDataDecryptedObject,
+	IDataObject,
 	IExecuteFunctions,
-	IExecuteSingleFunctions,
 	IHookFunctions,
 	ILoadOptionsFunctions,
 	IWebhookFunctions,
-} from 'n8n-core';
-
-import {
-	ICredentialDataDecryptedObject,
-	IDataObject,
+	JsonObject,
 } from 'n8n-workflow';
-
-import {
-	createHash,
-} from 'crypto';
+import { NodeApiError, NodeOperationError } from 'n8n-workflow';
 
 export async function getAuthorization(
-	this: IHookFunctions | IExecuteFunctions | IExecuteSingleFunctions | ILoadOptionsFunctions | IWebhookFunctions,
+	this: IHookFunctions | IExecuteFunctions | ILoadOptionsFunctions | IWebhookFunctions,
 	credentials?: ICredentialDataDecryptedObject,
 ): Promise<string> {
 	if (credentials === undefined) {
-		throw new Error('No credentials got returned!');
+		throw new NodeOperationError(this.getNode(), 'No credentials got returned!');
 	}
 
 	const { password, username } = credentials;
@@ -36,38 +29,29 @@ export async function getAuthorization(
 			password,
 			username,
 		},
-		uri: (credentials.url) ? `${credentials.url}/api/v1/auth` : 'https://api.taiga.io/api/v1/auth',
+		uri: credentials.url ? `${credentials.url}/api/v1/auth` : 'https://api.taiga.io/api/v1/auth',
 		json: true,
 	};
 
 	try {
-		const response = await this.helpers.request!(options);
+		const response = await this.helpers.request(options);
 
 		return response.auth_token;
 	} catch (error) {
-		throw new Error('Taiga Error: ' + error.err || error);
+		throw new NodeApiError(this.getNode(), error as JsonObject);
 	}
 }
 
 export async function taigaApiRequest(
-	this: IHookFunctions | IExecuteFunctions | IExecuteSingleFunctions | ILoadOptionsFunctions | IWebhookFunctions,
+	this: IHookFunctions | IExecuteFunctions | ILoadOptionsFunctions | IWebhookFunctions,
 	method: string,
 	resource: string,
 	body = {},
 	query = {},
 	uri?: string | undefined,
 	option = {},
-): Promise<any> { // tslint:disable-line:no-any
-
-	const version = this.getNodeParameter('version', 0, 'cloud') as string;
-
-	let credentials;
-
-	if (version === 'server') {
-		credentials = this.getCredentials('taigaServerApi') as ICredentialDataDecryptedObject;
-	} else {
-		credentials = this.getCredentials('taigaCloudApi') as ICredentialDataDecryptedObject;
-	}
+): Promise<any> {
+	const credentials = await this.getCredentials('taigaApi');
 
 	const authToken = await getAuthorization.call(this, credentials);
 
@@ -81,7 +65,10 @@ export async function taigaApiRequest(
 		qs: query,
 		method,
 		body,
-		uri: uri || (credentials.url) ? `${credentials.url}/api/v1${resource}` : `https://api.taiga.io/api/v1${resource}`,
+		uri:
+			uri || credentials.url
+				? `${credentials.url}/api/v1${resource}`
+				: `https://api.taiga.io/api/v1${resource}`,
 		json: true,
 	};
 
@@ -90,19 +77,20 @@ export async function taigaApiRequest(
 	}
 
 	try {
-		return await this.helpers.request!(options);
+		return await this.helpers.request(options);
 	} catch (error) {
-		let errorMessage = error;
-		if (error.response.body && error.response.body._error_message) {
-			errorMessage = error.response.body._error_message;
-		}
-
-		throw new Error(`Taigan error response [${error.statusCode}]: ${errorMessage}`);
+		throw new NodeApiError(this.getNode(), error as JsonObject);
 	}
 }
 
-export async function taigaApiRequestAllItems(this: IHookFunctions | IExecuteFunctions | ILoadOptionsFunctions, method: string, resource: string, body: any = {}, query: IDataObject = {}): Promise<any> { // tslint:disable-line:no-any
+export async function taigaApiRequestAllItems(
+	this: IHookFunctions | IExecuteFunctions | ILoadOptionsFunctions,
+	method: string,
+	resource: string,
 
+	body: IDataObject = {},
+	query: IDataObject = {},
+): Promise<any> {
 	const returnData: IDataObject[] = [];
 
 	let responseData;
@@ -110,10 +98,13 @@ export async function taigaApiRequestAllItems(this: IHookFunctions | IExecuteFun
 	let uri: string | undefined;
 
 	do {
-		responseData = await taigaApiRequest.call(this, method, resource, body, query, uri, { resolveWithFullResponse: true });
-		returnData.push.apply(returnData, responseData.body);
+		responseData = await taigaApiRequest.call(this, method, resource, body, query, uri, {
+			resolveWithFullResponse: true,
+		});
+		returnData.push.apply(returnData, responseData.body as IDataObject[]);
 		uri = responseData.headers['x-pagination-next'];
-		if (query.limit && returnData.length >= query.limit) {
+		const limit = query.limit as number | undefined;
+		if (limit && returnData.length >= limit) {
 			return returnData;
 		}
 	} while (
@@ -126,4 +117,39 @@ export async function taigaApiRequestAllItems(this: IHookFunctions | IExecuteFun
 export function getAutomaticSecret(credentials: ICredentialDataDecryptedObject) {
 	const data = `${credentials.username},${credentials.password}`;
 	return createHash('md5').update(data).digest('hex');
+}
+
+export async function handleListing(
+	this: IExecuteFunctions,
+	method: string,
+	endpoint: string,
+	body: IDataObject,
+	qs: IDataObject,
+	i: number,
+) {
+	let responseData;
+	qs.project = this.getNodeParameter('projectId', i) as number;
+	const returnAll = this.getNodeParameter('returnAll', i);
+
+	if (returnAll) {
+		return taigaApiRequestAllItems.call(this, method, endpoint, body, qs);
+	} else {
+		qs.limit = this.getNodeParameter('limit', i);
+		responseData = await taigaApiRequestAllItems.call(this, method, endpoint, body, qs);
+		return responseData.splice(0, qs.limit);
+	}
+}
+
+export const toOptions = (items: LoadedResource[]) =>
+	items.map(({ name, id }) => ({ name, value: id }));
+
+export function throwOnEmptyUpdate(this: IExecuteFunctions, resource: Resource) {
+	throw new NodeOperationError(
+		this.getNode(),
+		`Please enter at least one field to update for the ${resource}.`,
+	);
+}
+
+export async function getVersionForUpdate(this: IExecuteFunctions, endpoint: string) {
+	return taigaApiRequest.call(this, 'GET', endpoint).then((response) => response.version);
 }

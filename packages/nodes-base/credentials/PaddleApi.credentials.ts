@@ -1,24 +1,30 @@
-import {
-	ICredentialType,
-	NodePropertyTypes,
-} from 'n8n-workflow';
+import type { ICredentialType, INodeProperties } from 'n8n-workflow';
 
 export class PaddleApi implements ICredentialType {
 	name = 'paddleApi';
+
 	displayName = 'Paddle API';
+
 	documentationUrl = 'paddle';
-	properties = [
+
+	properties: INodeProperties[] = [
 		{
 			displayName: 'Vendor Auth Code',
 			name: 'vendorAuthCode',
-			type: 'string' as NodePropertyTypes,
+			type: 'string',
 			default: '',
 		},
 		{
 			displayName: 'Vendor ID',
 			name: 'vendorId',
-			type: 'string' as NodePropertyTypes,
+			type: 'string',
 			default: '',
+		},
+		{
+			displayName: 'Use Sandbox Environment API',
+			name: 'sandbox',
+			type: 'boolean',
+			default: false,
 		},
 	];
 }

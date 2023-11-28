@@ -1,16 +1,13 @@
-import {
+import type {
 	IExecuteFunctions,
 	IHookFunctions,
-} from 'n8n-core';
-
-import {
 	IDataObject,
 	ILoadOptionsFunctions,
+	JsonObject,
 } from 'n8n-workflow';
+import { NodeApiError } from 'n8n-workflow';
 
-import {
-	OptionsWithUri,
-} from 'request';
+import type { OptionsWithUri } from 'request';
 
 /**
  * Make an authenticated API request to Raindrop.
@@ -23,7 +20,6 @@ export async function raindropApiRequest(
 	body: IDataObject,
 	option: IDataObject = {},
 ) {
-
 	const options: OptionsWithUri = {
 		headers: {
 			'user-agent': 'n8n',
@@ -49,15 +45,10 @@ export async function raindropApiRequest(
 	}
 
 	try {
-		return await this.helpers.requestOAuth2!.call(this, 'raindropOAuth2Api', options);
-
+		return await this.helpers.requestOAuth2.call(this, 'raindropOAuth2Api', options, {
+			includeCredentialsOnRefreshOnBody: true,
+		});
 	} catch (error) {
-
-		if (error?.response?.body?.errorMessage) {
-			const errorMessage = error?.response?.body?.errorMessage;
-			throw new Error(`Raindrop error response [${error.statusCode}]: ${errorMessage}`);
-		}
-
-		throw error;
+		throw new NodeApiError(this.getNode(), error as JsonObject);
 	}
 }

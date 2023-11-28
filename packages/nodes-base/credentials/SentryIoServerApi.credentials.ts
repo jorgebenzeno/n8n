@@ -1,22 +1,24 @@
-import {
-	ICredentialType,
-	NodePropertyTypes,
-} from 'n8n-workflow';
+import type { ICredentialType, INodeProperties } from 'n8n-workflow';
 
 export class SentryIoServerApi implements ICredentialType {
 	name = 'sentryIoServerApi';
-	displayName = 'Sentry.io API';
+
+	displayName = 'Sentry.io Server API';
+
 	documentationUrl = 'sentryIo';
-	properties = [
+
+	properties: INodeProperties[] = [
 		{
 			displayName: 'Token',
 			name: 'token',
-			type: 'string' as NodePropertyTypes,
+			type: 'string',
+			typeOptions: { password: true },
 			default: '',
-		},		{
+		},
+		{
 			displayName: 'URL',
 			name: 'url',
-			type: 'string' as NodePropertyTypes,
+			type: 'string',
 			default: '',
 			placeholder: 'https://example.com',
 		},

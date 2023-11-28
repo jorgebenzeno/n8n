@@ -1,24 +1,26 @@
-import {
-	OptionsWithUri,
-} from 'request';
+import type { OptionsWithUri } from 'request';
 
-import {
+import type {
+	IDataObject,
 	IExecuteFunctions,
-	IExecuteSingleFunctions,
 	IHookFunctions,
 	ILoadOptionsFunctions,
-} from 'n8n-core';
-
-import {
-	IDataObject,
+	JsonObject,
 } from 'n8n-workflow';
+import { NodeApiError } from 'n8n-workflow';
 
-export async function brandfetchApiRequest(this: IHookFunctions | IExecuteFunctions | IExecuteSingleFunctions | ILoadOptionsFunctions, method: string, resource: string, body: any = {}, qs: IDataObject = {}, uri?: string, option: IDataObject = {}): Promise<any> { // tslint:disable-line:no-any
+export async function brandfetchApiRequest(
+	this: IHookFunctions | IExecuteFunctions | ILoadOptionsFunctions,
+	method: string,
+	resource: string,
+
+	body: any = {},
+	qs: IDataObject = {},
+	uri?: string,
+	option: IDataObject = {},
+): Promise<any> {
 	try {
-		const credentials = this.getCredentials('brandfetchApi');
-		if (credentials === undefined) {
-			throw new Error('No credentials got returned!');
-		}
+		const credentials = await this.getCredentials('brandfetchApi');
 		let options: OptionsWithUri = {
 			headers: {
 				'x-api-key': credentials.apiKey,
@@ -36,30 +38,21 @@ export async function brandfetchApiRequest(this: IHookFunctions | IExecuteFuncti
 			delete options.headers;
 		}
 
-		if (!Object.keys(body).length) {
+		if (!Object.keys(body as IDataObject).length) {
 			delete options.body;
 		}
 		if (!Object.keys(qs).length) {
 			delete options.qs;
 		}
 
-		const response = await this.helpers.request!(options);
+		const response = await this.helpers.request(options);
 
 		if (response.statusCode && response.statusCode !== 200) {
-			throw new Error(`Brandfetch error response [${response.statusCode}]: ${response.response}`);
+			throw new NodeApiError(this.getNode(), response as JsonObject);
 		}
 
 		return response;
-
 	} catch (error) {
-
-		if (error.response && error.response.body && error.response.body.message) {
-			// Try to return the error prettier
-			const errorBody = error.response.body;
-			throw new Error(`Brandfetch error response [${error.statusCode}]: ${errorBody.message}`);
-		}
-
-		// Expected error data did not get returned so throw the actual error
-		throw error;
+		throw new NodeApiError(this.getNode(), error as JsonObject);
 	}
 }

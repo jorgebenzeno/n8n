@@ -1,17 +1,19 @@
-import {
-	OptionsWithUri,
-} from 'request';
+import type { OptionsWithUri } from 'request';
 
-import {
+import type {
 	IExecuteFunctions,
 	ILoadOptionsFunctions,
-} from 'n8n-core';
-
-import {
 	IDataObject,
 	IHookFunctions,
-	IWebhookFunctions
+	IWebhookFunctions,
 } from 'n8n-workflow';
+import { NodeApiError } from 'n8n-workflow';
+
+/**
+ * Return the base API URL based on the user's environment.
+ */
+const getBaseUrl = ({ environment, domain, subdomain }: ERPNextApiCredentials) =>
+	environment === 'cloudHosted' ? `https://${subdomain}.${domain}` : domain;
 
 export async function erpNextApiRequest(
 	this: IExecuteFunctions | IWebhookFunctions | IHookFunctions | ILoadOptionsFunctions,
@@ -22,60 +24,43 @@ export async function erpNextApiRequest(
 	uri?: string,
 	option: IDataObject = {},
 ) {
-
-	const credentials = this.getCredentials('erpNextApi');
-
-	if (credentials === undefined) {
-		throw new Error('No credentials got returned!');
-	}
+	const credentials = (await this.getCredentials('erpNextApi')) as ERPNextApiCredentials;
+	const baseUrl = getBaseUrl(credentials);
 
 	let options: OptionsWithUri = {
 		headers: {
-			'Accept': 'application/json',
+			Accept: 'application/json',
 			'Content-Type': 'application/json',
-			Authorization: `token ${credentials.apiKey}:${credentials.apiSecret}`,
 		},
 		method,
 		body,
 		qs: query,
-		uri: uri || `https://${credentials.subdomain}.erpnext.com${resource}`,
+		uri: uri || `${baseUrl}${resource}`,
 		json: true,
+		rejectUnauthorized: !credentials.allowUnauthorizedCerts,
 	};
 
 	options = Object.assign({}, options, option);
 
-	if (!Object.keys(options.body).length) {
+	if (!Object.keys(options.body as IDataObject).length) {
 		delete options.body;
 	}
 
-	if (!Object.keys(options.qs).length) {
+	if (!Object.keys(options.qs as IDataObject).length) {
 		delete options.qs;
 	}
 	try {
-		return await this.helpers.request!(options);
+		return await this.helpers.requestWithAuthentication.call(this, 'erpNextApi', options);
 	} catch (error) {
-
 		if (error.statusCode === 403) {
-			throw new Error(
-				`ERPNext error response [${error.statusCode}]: DocType unavailable.`,
-			);
+			throw new NodeApiError(this.getNode(), { message: 'DocType unavailable.' });
 		}
 
 		if (error.statusCode === 307) {
-			throw new Error(
-				`ERPNext error response [${error.statusCode}]: Please ensure the subdomain is correct.`,
-			);
+			throw new NodeApiError(this.getNode(), {
+				message: 'Please ensure the subdomain is correct.',
+			});
 		}
-
-		let errorMessages;
-		if (error?.response?.body?._server_messages) {
-			const errors = JSON.parse(error.response.body._server_messages);
-			errorMessages = errors.map((e: string) => JSON.parse(e).message);
-			throw new Error(
-				`ARPNext error response [${error.statusCode}]: ${errorMessages.join('|')}`,
-			);
-		}
-
 		throw error;
 	}
 }
@@ -88,20 +73,26 @@ export async function erpNextApiRequestAllItems(
 	body: IDataObject,
 	query: IDataObject = {},
 ) {
-	// tslint:disable-next-line: no-any
 	const returnData: any[] = [];
 
 	let responseData;
-	query!.limit_start = 0;
-	query!.limit_page_length = 1000;
+	query.limit_start = 0;
+	query.limit_page_length = 1000;
 
 	do {
 		responseData = await erpNextApiRequest.call(this, method, resource, body, query);
-		returnData.push.apply(returnData, responseData[propertyName]);
-		query!.limit_start += query!.limit_page_length - 1;
-	} while (
-		responseData.data.length > 0
-	);
+		returnData.push.apply(returnData, responseData[propertyName] as IDataObject[]);
+		query.limit_start += query.limit_page_length - 1;
+	} while (responseData.data && responseData.data.length > 0);
 
 	return returnData;
 }
+
+type ERPNextApiCredentials = {
+	apiKey: string;
+	apiSecret: string;
+	environment: 'cloudHosted' | 'selfHosted';
+	subdomain?: string;
+	domain?: string;
+	allowUnauthorizedCerts?: boolean;
+};

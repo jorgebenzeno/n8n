@@ -1,21 +1,20 @@
-import {
-	ICredentialType,
-	NodePropertyTypes,
-} from 'n8n-workflow';
+import type { ICredentialType, INodeProperties } from 'n8n-workflow';
 
 export class MicrosoftExcelOAuth2Api implements ICredentialType {
 	name = 'microsoftExcelOAuth2Api';
-	extends = [
-		'microsoftOAuth2Api',
-	];
+
+	extends = ['microsoftOAuth2Api'];
+
 	displayName = 'Microsoft Excel OAuth2 API';
+
 	documentationUrl = 'microsoft';
-	properties = [
+
+	properties: INodeProperties[] = [
 		//https://docs.microsoft.com/en-us/azure/active-directory/develop/v2-permissions-and-consent
 		{
 			displayName: 'Scope',
 			name: 'scope',
-			type: 'hidden' as NodePropertyTypes,
+			type: 'hidden',
 			default: 'openid offline_access Files.ReadWrite',
 		},
 	];

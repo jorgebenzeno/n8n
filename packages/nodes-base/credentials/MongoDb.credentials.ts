@@ -1,14 +1,17 @@
-import { ICredentialType, NodePropertyTypes } from 'n8n-workflow';
+import type { ICredentialType, INodeProperties } from 'n8n-workflow';
 
 export class MongoDb implements ICredentialType {
 	name = 'mongoDb';
+
 	displayName = 'MongoDB';
+
 	documentationUrl = 'mongoDb';
-	properties = [
+
+	properties: INodeProperties[] = [
 		{
 			displayName: 'Configuration Type',
 			name: 'configurationType',
-			type: 'options' as NodePropertyTypes,
+			type: 'options',
 			options: [
 				{
 					name: 'Connection String',
@@ -22,34 +25,29 @@ export class MongoDb implements ICredentialType {
 				},
 			],
 			default: 'values',
-			description: 'The operation to perform.',
 		},
 		{
 			displayName: 'Connection String',
 			name: 'connectionString',
-			type: 'string' as NodePropertyTypes,
+			type: 'string',
 			displayOptions: {
 				show: {
-					configurationType: [
-						'connectionString',
-					],
+					configurationType: ['connectionString'],
 				},
 			},
 			default: '',
-			placeholder: 'mongodb://<USERNAME>:<PASSWORD>@localhost:27017/?authSource=admin&readPreference=primary&appname=n8n&ssl=false',
-			required: false,
-			description: `If provided, the value here will be used as a MongoDB connection string,<br />
-						  and the MongoDB credentials will be ignored`,
+			placeholder:
+				'mongodb://<USERNAME>:<PASSWORD>@localhost:27017/?authSource=admin&readPreference=primary&appname=n8n&ssl=false',
+			description:
+				'If provided, the value here will be used as a MongoDB connection string, and the MongoDB credentials will be ignored',
 		},
 		{
 			displayName: 'Host',
 			name: 'host',
-			type: 'string' as NodePropertyTypes,
+			type: 'string',
 			displayOptions: {
 				show: {
-					configurationType: [
-						'values',
-					],
+					configurationType: ['values'],
 				},
 			},
 			default: 'localhost',
@@ -57,19 +55,18 @@ export class MongoDb implements ICredentialType {
 		{
 			displayName: 'Database',
 			name: 'database',
-			type: 'string' as NodePropertyTypes,
+			type: 'string',
 			default: '',
-			description: 'Note: the database should still be provided even if using an override connection string',
+			description:
+				'Note: the database should still be provided even if using an override connection string',
 		},
 		{
 			displayName: 'User',
 			name: 'user',
-			type: 'string' as NodePropertyTypes,
+			type: 'string',
 			displayOptions: {
 				show: {
-					configurationType: [
-						'values',
-					],
+					configurationType: ['values'],
 				},
 			},
 			default: '',
@@ -77,15 +74,13 @@ export class MongoDb implements ICredentialType {
 		{
 			displayName: 'Password',
 			name: 'password',
-			type: 'string' as NodePropertyTypes,
+			type: 'string',
 			typeOptions: {
 				password: true,
 			},
 			displayOptions: {
 				show: {
-					configurationType: [
-						'values',
-					],
+					configurationType: ['values'],
 				},
 			},
 			default: '',
@@ -93,12 +88,10 @@ export class MongoDb implements ICredentialType {
 		{
 			displayName: 'Port',
 			name: 'port',
-			type: 'number' as NodePropertyTypes,
+			type: 'number',
 			displayOptions: {
 				show: {
-					configurationType: [
-						'values',
-					],
+					configurationType: ['values'],
 				},
 			},
 			default: 27017,

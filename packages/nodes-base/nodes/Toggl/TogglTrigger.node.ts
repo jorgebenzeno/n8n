@@ -1,25 +1,27 @@
-import { IPollFunctions } from 'n8n-core';
-import {
+import type {
+	IPollFunctions,
 	IDataObject,
 	INodeExecutionData,
 	INodeType,
 	INodeTypeDescription,
+	JsonObject,
 } from 'n8n-workflow';
+import { NodeApiError, NodeOperationError } from 'n8n-workflow';
 
-import * as moment from 'moment';
+import moment from 'moment';
 import { togglApiRequest } from './GenericFunctions';
 
 export class TogglTrigger implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Toggl Trigger',
 		name: 'togglTrigger',
+		// eslint-disable-next-line n8n-nodes-base/node-class-description-icon-not-svg
 		icon: 'file:toggl.png',
 		group: ['trigger'],
 		version: 1,
-		description: 'Starts the workflow when Toggl events occure',
+		description: 'Starts the workflow when Toggl events occur',
 		defaults: {
-			name: 'Toggl',
-			color: '#00FF00',
+			name: 'Toggl Trigger',
 		},
 		credentials: [
 			{
@@ -55,7 +57,7 @@ export class TogglTrigger implements INodeType {
 		if (event === 'newTimeEntry') {
 			endpoint = '/time_entries';
 		} else {
-			throw new Error(`The defined event "${event}" is not supported`);
+			throw new NodeOperationError(this.getNode(), `The defined event "${event}" is not supported`);
 		}
 
 		const qs: IDataObject = {};
@@ -66,8 +68,8 @@ export class TogglTrigger implements INodeType {
 		try {
 			timeEntries = await togglApiRequest.call(this, 'GET', endpoint, {}, qs);
 			webhookData.lastTimeChecked = qs.end_date;
-		} catch (err) {
-			throw new Error(`Toggl Trigger Error: ${err}`);
+		} catch (error) {
+			throw new NodeApiError(this.getNode(), error as JsonObject);
 		}
 		if (Array.isArray(timeEntries) && timeEntries.length !== 0) {
 			return [this.helpers.returnJsonArray(timeEntries)];
@@ -75,5 +77,4 @@ export class TogglTrigger implements INodeType {
 
 		return null;
 	}
-
 }
